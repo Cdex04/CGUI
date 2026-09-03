@@ -11,7 +11,6 @@ local CoreGui = game:GetService("CoreGui")
 function Library.CreateWindow(TITEL)
     local self = setmetatable({}, Library)
     
-    -- ScreenGui in CoreGui oder gethui platzieren
     local CGUI = Instance.new("ScreenGui")
     CGUI.Name = "ExecLibrary_" .. math.random(1000, 9999)
     
@@ -143,7 +142,6 @@ function Library.CreateWindow(TITEL)
         CWindowbarC:TweenSize(UDim2.new(0, 779, 0, 3), "Out", "Quad", 1.2, true)
     end)
 
-    -- Speicherung interner Referenzen
     self.TabBar = TabBar
     self.ContentContainer = ContentContainer
     self.Tabs = {}
@@ -216,23 +214,77 @@ function Library:CreateTab(tabName)
     return tabObj
 end
 
--- Beispielement: Button zu einem Tab hinzufügen
-function TabClass:AddButton(text, callback)
+-- === ERWEITERTER BUTTON MIT DESCRIPTION & DESIGN ===
+function TabClass:AddButton(titleText, descriptionText, callback)
+    local hasDesc = descriptionText and descriptionText ~= ""
+    local btnHeight = hasDesc and 48 or 36
+
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -10, 0, 35)
+    btn.Size = UDim2.new(1, -10, 0, btnHeight)
     btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Text = text
-    btn.Font = Enum.Font.SourceSans
-    btn.TextSize = 16
+    btn.BackgroundTransparency = 0.2
+    btn.Text = ""
+    btn.AutoButtonColor = false
     btn.Parent = self.Page
 
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 4)
+    corner.CornerRadius = UDim.new(0, 6)
     corner.Parent = btn
 
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(45, 45, 45)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = btn
+
+    -- Haupttitel des Buttons
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Text = titleText
+    titleLabel.Size = UDim2.new(1, -20, 0, hasDesc and 22 or btnHeight)
+    titleLabel.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 0)
+    titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextSize = 16
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Parent = btn
+
+    -- Beschreibung (falls vorhanden)
+    if hasDesc then
+        local descLabel = Instance.new("TextLabel")
+        descLabel.Text = descriptionText
+        descLabel.Size = UDim2.new(1, -20, 0, 18)
+        descLabel.Position = UDim2.new(0, 12, 0, 24)
+        descLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+        descLabel.Font = Enum.Font.SourceSans
+        descLabel.TextSize = 13
+        descLabel.BackgroundTransparency = 1
+        descLabel.Parent = btn
+    end
+
+    -- Smooth Hover-Animations & Click-Effekt
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
+        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 45, 45)}):Play()
+        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(230, 230, 230)}):Play()
+    end)
+
     btn.MouseButton1Click:Connect(function()
-        pcall(callback)
+        -- Kurze Klick-Animation
+        TweenService:Create(btn, TweenInfo.new(0.08), {BackgroundColor3 = Color3.fromRGB(0, 140, 200)}):Play()
+        task.wait(0.08)
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
+        
+        if callback then
+            pcall(callback)
+        end
     end)
 end
 
