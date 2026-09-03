@@ -215,7 +215,7 @@ function Library:CreateTab(tabName)
     return tabObj
 end
 
--- === ERWEITERTER BUTTON MIT DESCRIPTION & DESIGN ===
+-- === BUTTON ERSTELLEN ===
 function TabClass:AddButton(titleText, descriptionText, callback)
     local hasDesc = descriptionText and descriptionText ~= ""
     local btnHeight = hasDesc and 48 or 36
@@ -238,7 +238,6 @@ function TabClass:AddButton(titleText, descriptionText, callback)
     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = btn
 
-    -- Haupttitel des Buttons
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Text = titleText
     titleLabel.Size = UDim2.new(1, -20, 0, hasDesc and 22 or btnHeight)
@@ -250,7 +249,6 @@ function TabClass:AddButton(titleText, descriptionText, callback)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Parent = btn
 
-    -- Beschreibung (falls vorhanden)
     if hasDesc then
         local descLabel = Instance.new("TextLabel")
         descLabel.Text = descriptionText
@@ -264,7 +262,6 @@ function TabClass:AddButton(titleText, descriptionText, callback)
         descLabel.Parent = btn
     end
 
-    -- Smooth Hover-Animations & Click-Effekt
     btn.MouseEnter:Connect(function()
         TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
         TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
@@ -278,13 +275,187 @@ function TabClass:AddButton(titleText, descriptionText, callback)
     end)
 
     btn.MouseButton1Click:Connect(function()
-        -- Kurze Klick-Animation
         TweenService:Create(btn, TweenInfo.new(0.08), {BackgroundColor3 = Color3.fromRGB(0, 140, 200)}):Play()
         task.wait(0.08)
         TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
         
         if callback then
             pcall(callback)
+        end
+    end)
+end
+
+-- === SLIDER ERSTELLEN ===
+function TabClass:AddSlider(options, callback)
+    options = options or {}
+    local titleText = options.Title or "Slider"
+    local descriptionText = options.Description or ""
+    local min = options.Min or 0
+    local max = options.Max or 100
+    local default = math.clamp(options.Default or min, min, max)
+    local rounding = options.Rounding or 0
+
+    local hasDesc = descriptionText ~= ""
+    local frameHeight = hasDesc and 62 or 50
+
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(1, -10, 0, frameHeight)
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    sliderFrame.BackgroundTransparency = 0.2
+    sliderFrame.Parent = self.Page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = sliderFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(45, 45, 45)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = sliderFrame
+
+    -- Titel
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Text = titleText
+    titleLabel.Size = UDim2.new(1, -80, 0, 20)
+    titleLabel.Position = UDim2.new(0, 12, 0, 4)
+    titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextSize = 16
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Parent = sliderFrame
+
+    -- Wert-Anzeige (Oben Rechts)
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Text = tostring(default)
+    valueLabel.Size = UDim2.new(0, 60, 0, 20)
+    valueLabel.Position = UDim2.new(1, -72, 0, 4)
+    valueLabel.TextColor3 = Color3.fromRGB(0, 187, 255)
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Font = Enum.Font.SourceSansBold
+    valueLabel.TextSize = 15
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Parent = sliderFrame
+
+    -- Beschreibung (falls angegeben)
+    if hasDesc then
+        local descLabel = Instance.new("TextLabel")
+        descLabel.Text = descriptionText
+        descLabel.Size = UDim2.new(1, -20, 0, 16)
+        descLabel.Position = UDim2.new(0, 12, 0, 22)
+        descLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+        descLabel.Font = Enum.Font.SourceSans
+        descLabel.TextSize = 13
+        descLabel.BackgroundTransparency = 1
+        descLabel.Parent = sliderFrame
+    end
+
+    -- Slider-Balken (Hintergrund)
+    local sliderBar = Instance.new("TextButton")
+    sliderBar.Text = ""
+    sliderBar.AutoButtonColor = false
+    sliderBar.Size = UDim2.new(1, -24, 0, 6)
+    sliderBar.Position = UDim2.new(0, 12, 0, hasDesc and 45 or 32)
+    sliderBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    sliderBar.BorderSizePixel = 0
+    sliderBar.Parent = sliderFrame
+
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(1, 0)
+    barCorner.Parent = sliderBar
+
+    -- Slider-Füllung (Blau)
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 187, 255)
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBar
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = sliderFill
+
+    -- Runder Regler-Knopf
+    local sliderKnob = Instance.new("Frame")
+    sliderKnob.Size = UDim2.new(0, 12, 0, 12)
+    sliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    sliderKnob.Position = UDim2.new(1, 0, 0.5, 0)
+    sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    sliderKnob.Parent = sliderFill
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = sliderKnob
+
+    -- Hover-Effekte
+    sliderFrame.MouseEnter:Connect(function()
+        TweenService:Create(sliderFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
+        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+
+    sliderFrame.MouseLeave:Connect(function()
+        TweenService:Create(sliderFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 45, 45)}):Play()
+        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(230, 230, 230)}):Play()
+    end)
+
+    -- Logik für das Ziehen
+    local isDragging = false
+
+    local function round(num, bracket)
+        bracket = bracket or 1
+        if bracket == 0 then return num end
+        return math.floor(num/bracket + 0.5) * bracket
+    end
+
+    local function updateValue(input)
+        local barAbsPos = sliderBar.AbsolutePosition.X
+        local barAbsSize = sliderBar.AbsoluteSize.X
+        local inputX = input.Position.X
+        
+        local percentage = math.clamp((inputX - barAbsPos) / barAbsSize, 0, 1)
+        local rawValue = min + (percentage * (max - min))
+        local step = 10 ^ (-rounding)
+        local roundedValue = round(rawValue, step)
+        
+        -- Wert im gültigen Bereich halten
+        roundedValue = math.clamp(roundedValue, min, max)
+
+        -- Fortschrittsbalken aktualisieren
+        local fillRatio = (roundedValue - min) / (max - min)
+        TweenService:Create(sliderFill, TweenInfo.new(0.05), {Size = UDim2.new(fillRatio, 0, 1, 0)}):Play()
+
+        -- Text formatieren & anzeigen
+        if rounding == 0 then
+            valueLabel.Text = tostring(math.floor(roundedValue))
+        else
+            valueLabel.Text = string.format("%." .. rounding .. "f", roundedValue)
+        end
+
+        if callback then
+            pcall(callback, roundedValue)
+        end
+    end
+
+    sliderBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            updateValue(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateValue(input)
         end
     end)
 end
