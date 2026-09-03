@@ -1,4 +1,4 @@
-print("0.0.0.4")
+print("0.0.0.5")
 local Library = {}
 Library.__index = Library
 
@@ -10,7 +10,6 @@ local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local StarterGui = game:GetService("StarterGui")
 
--- Container für Screen-Notifications unten rechts (Stacking)
 local NotificationGui = Instance.new("ScreenGui")
 NotificationGui.Name = "CGUI_Notifications_" .. math.random(1000, 9999)
 
@@ -35,15 +34,18 @@ NotifyLayout.SortOrder = Enum.SortOrder.LayoutOrder
 NotifyLayout.Padding = UDim.new(0, 8)
 NotifyLayout.Parent = NotifyStackFrame
 
+-- Dynamic Drag Block Variable
+local isInteracting = false
+
 -- ===================================================
--- 1. NOTIFICATION SYSTEM (3 MODI + STACKING)
+-- 1. NOTIFICATIONS
 -- ===================================================
 function Library:Notify(options)
     options = options or {}
     local title = options.Title or "Notification"
     local text = options.Text or ""
     local duration = options.Duration or 3
-    local mode = options.Mode or "Screen" -- Modes: "Roblox", "Screen", "Window"
+    local mode = options.Mode or "Screen"
 
     if mode == "Roblox" then
         pcall(function()
@@ -137,7 +139,7 @@ function Library:Notify(options)
 end
 
 -- ===================================================
--- 2. HAUPTFENSTER
+-- 2. WINDOW CREATION (DRAG BUG FIX)
 -- ===================================================
 function Library.CreateWindow(TITEL)
     local self = setmetatable({}, Library)
@@ -234,7 +236,7 @@ function Library.CreateWindow(TITEL)
     ContentContainer.ClipsDescendants = true
     ContentContainer.Parent = CWindow
 
-    -- Drag-Logik
+    -- Draggable System mit Interaktions-Check
     local dragging, dragInput, dragStart, startPos
     local function update(input)
         local delta = input.Position - dragStart
@@ -242,7 +244,7 @@ function Library.CreateWindow(TITEL)
     end
 
     CWindow.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not isInteracting then
             if UserInputService:GetFocusedTextBox() then return end
             dragging = true
             dragStart = input.Position
@@ -261,7 +263,7 @@ function Library.CreateWindow(TITEL)
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then update(input) end
+        if input == dragInput and dragging and not isInteracting then update(input) end
     end)
 
     task.delay(1.2, function()
@@ -559,6 +561,7 @@ function TabClass:AddSlider(options, callback)
     sliderBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             isDragging = true
+            isInteracting = true
             updateValue(input)
         end
     end)
@@ -566,6 +569,7 @@ function TabClass:AddSlider(options, callback)
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             isDragging = false
+            isInteracting = false
         end
     end)
 
@@ -686,7 +690,7 @@ function TabClass:AddToggle(options, callback)
 end
 
 -- ===================================================
--- 7. SECTIONS (Mit Text oder nur Linie)
+-- 7. SECTIONS
 -- ===================================================
 function TabClass:AddSection(text)
     local hasText = text and text ~= ""
@@ -760,7 +764,7 @@ function TabClass:AddText(text)
 end
 
 -- ===================================================
--- 9. COLOR PICKER (Ausklappbar + OK / Abbrechen)
+-- 9. COLOR PICKER (DRAG FIX INKLUSIVE)
 -- ===================================================
 function TabClass:AddColorPicker(options, callback)
     options = options or {}
@@ -805,7 +809,6 @@ function TabClass:AddColorPicker(options, callback)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Parent = headerBtn
 
-    -- Farb-Vorschau neben Titel
     local previewBox = Instance.new("Frame")
     previewBox.Size = UDim2.new(0, 24, 0, 24)
     previewBox.Position = UDim2.new(1, -36, 0, 7)
@@ -821,7 +824,6 @@ function TabClass:AddColorPicker(options, callback)
     pStroke.Color = Color3.fromRGB(60, 60, 60)
     pStroke.Parent = previewBox
 
-    -- Ausklappbarer Bereich
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, -24, 0, 120)
     container.Position = UDim2.new(0, 12, 0, 42)
@@ -830,7 +832,6 @@ function TabClass:AddColorPicker(options, callback)
 
     local h, s, v = defaultColor:ToHSV()
 
-    -- HSV Box (Sättigung & Helligkeit)
     local hsvBox = Instance.new("ImageLabel")
     hsvBox.Size = UDim2.new(0, 180, 0, 80)
     hsvBox.Position = UDim2.new(0, 0, 0, 0)
@@ -853,7 +854,6 @@ function TabClass:AddColorPicker(options, callback)
     cCorner.CornerRadius = UDim.new(1, 0)
     cCorner.Parent = hsvCursor
 
-    -- Hue Bar (Farbton)
     local hueBar = Instance.new("ImageLabel")
     hueBar.Size = UDim2.new(0, 20, 0, 80)
     hueBar.Position = UDim2.new(0, 190, 0, 0)
@@ -871,7 +871,6 @@ function TabClass:AddColorPicker(options, callback)
     hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     hueCursor.Parent = hueBar
 
-    -- OK & Abbrechen Buttons
     local okBtn = Instance.new("TextButton")
     okBtn.Text = "OK"
     okBtn.Size = UDim2.new(0, 80, 0, 26)
@@ -906,21 +905,27 @@ function TabClass:AddColorPicker(options, callback)
         previewBox.BackgroundColor3 = currentColor
     end
 
-    -- Pick Logik
     local draggingHSV = false
     local draggingHue = false
 
     hsvBox.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingHSV = true end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            draggingHSV = true 
+            isInteracting = true
+        end
     end)
     hueBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingHue = true end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            draggingHue = true 
+            isInteracting = true
+        end
     end)
 
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             draggingHSV = false
             draggingHue = false
+            isInteracting = false
         end
     end)
 
@@ -965,6 +970,190 @@ function TabClass:AddColorPicker(options, callback)
         hueCursor.Position = UDim2.new(0, 0, 1 - h, 0)
         updateColor()
         toggleExpand(false)
+    end)
+end
+
+-- ===================================================
+-- 10. DROPDOWN (NEU)
+-- ===================================================
+function TabClass:AddDropdown(options, callback)
+    options = options or {}
+    local titleText = options.Title or "Dropdown"
+    local list = options.Options or {}
+    local default = options.Default or list[1] or "Keine Optionen"
+
+    local expanded = false
+    local selected = default
+
+    local dropFrame = Instance.new("Frame")
+    dropFrame.Size = UDim2.new(1, -10, 0, 38)
+    dropFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    dropFrame.BackgroundTransparency = 0.2
+    dropFrame.ClipsDescendants = true
+    dropFrame.Parent = self.Page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = dropFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(45, 45, 45)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = dropFrame
+
+    local headerBtn = Instance.new("TextButton")
+    headerBtn.Size = UDim2.new(1, 0, 0, 38)
+    headerBtn.BackgroundTransparency = 1
+    headerBtn.Text = ""
+    headerBtn.Parent = dropFrame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Text = titleText
+    titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    titleLabel.Position = UDim2.new(0, 12, 0, 0)
+    titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextSize = 16
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Parent = headerBtn
+
+    local selectedLabel = Instance.new("TextLabel")
+    selectedLabel.Text = selected .. "  v"
+    selectedLabel.Size = UDim2.new(0.5, -20, 1, 0)
+    selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
+    selectedLabel.TextColor3 = Color3.fromRGB(0, 187, 255)
+    selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
+    selectedLabel.Font = Enum.Font.SourceSansBold
+    selectedLabel.TextSize = 14
+    selectedLabel.BackgroundTransparency = 1
+    selectedLabel.Parent = headerBtn
+
+    local optionContainer = Instance.new("ScrollingFrame")
+    optionContainer.Size = UDim2.new(1, -24, 0, 0)
+    optionContainer.Position = UDim2.new(0, 12, 0, 40)
+    optionContainer.BackgroundTransparency = 1
+    optionContainer.BorderSizePixel = 0
+    optionContainer.ScrollBarThickness = 2
+    optionContainer.Parent = dropFrame
+
+    local optionLayout = Instance.new("UIListLayout")
+    optionLayout.Padding = UDim.new(0, 4)
+    optionLayout.Parent = optionContainer
+
+    local function refreshOptions()
+        for _, child in ipairs(optionContainer:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+
+        for _, item in ipairs(list) do
+            local optBtn = Instance.new("TextButton")
+            optBtn.Text = item
+            optBtn.Size = UDim2.new(1, -6, 0, 28)
+            optBtn.BackgroundColor3 = (item == selected) and Color3.fromRGB(0, 140, 200) or Color3.fromRGB(35, 35, 35)
+            optBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+            optBtn.Font = Enum.Font.SourceSans
+            optBtn.TextSize = 14
+            optBtn.Parent = optionContainer
+
+            local oCorner = Instance.new("UICorner")
+            oCorner.CornerRadius = UDim.new(0, 4)
+            oCorner.Parent = optBtn
+
+            optBtn.MouseButton1Click:Connect(function()
+                selected = item
+                selectedLabel.Text = selected .. "  v"
+                expanded = false
+                TweenService:Create(dropFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, -10, 0, 38)}):Play()
+                refreshOptions()
+                if callback then pcall(callback, selected) end
+            end)
+        end
+
+        optionContainer.CanvasSize = UDim2.new(0, 0, 0, optionLayout.AbsoluteContentSize.Y)
+    end
+
+    refreshOptions()
+
+    headerBtn.MouseButton1Click:Connect(function()
+        expanded = not expanded
+        local maxH = math.min(#list * 32, 120)
+        local targetH = expanded and (46 + maxH) or 38
+        optionContainer.Size = UDim2.new(1, -24, 0, expanded and maxH or 0)
+        TweenService:Create(dropFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, -10, 0, targetH)}):Play()
+    end)
+end
+
+-- ===================================================
+-- 11. KEYBIND (NEU)
+-- ===================================================
+function TabClass:AddKeybind(options, callback)
+    options = options or {}
+    local titleText = options.Title or "Keybind"
+    local defaultKey = options.Default or Enum.KeyCode.E
+
+    local currentKey = defaultKey
+    local listening = false
+
+    local bindFrame = Instance.new("Frame")
+    bindFrame.Size = UDim2.new(1, -10, 0, 38)
+    bindFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    bindFrame.BackgroundTransparency = 0.2
+    bindFrame.Parent = self.Page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = bindFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(45, 45, 45)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = bindFrame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Text = titleText
+    titleLabel.Size = UDim2.new(1, -120, 1, 0)
+    titleLabel.Position = UDim2.new(0, 12, 0, 0)
+    titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextSize = 16
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Parent = bindFrame
+
+    local bindBtn = Instance.new("TextButton")
+    bindBtn.Text = currentKey.Name
+    bindBtn.Size = UDim2.new(0, 90, 0, 24)
+    bindBtn.Position = UDim2.new(1, -102, 0.5, -12)
+    bindBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    bindBtn.TextColor3 = Color3.fromRGB(0, 187, 255)
+    bindBtn.Font = Enum.Font.SourceSansBold
+    bindBtn.TextSize = 14
+    bindBtn.Parent = bindFrame
+
+    local bCorner = Instance.new("UICorner")
+    bCorner.CornerRadius = UDim.new(0, 4)
+    bCorner.Parent = bindBtn
+
+    bindBtn.MouseButton1Click:Connect(function()
+        listening = true
+        bindBtn.Text = "..."
+        bindBtn.TextColor3 = Color3.fromRGB(255, 200, 0)
+    end)
+
+    UserInputService.InputBegan:Connect(function(input, gpe)
+        if listening then
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                currentKey = input.KeyCode
+                bindBtn.Text = currentKey.Name
+                bindBtn.TextColor3 = Color3.fromRGB(0, 187, 255)
+                listening = false
+            end
+        elseif not gpe and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == currentKey then
+            if callback then pcall(callback, currentKey) end
+        end
     end)
 end
 
