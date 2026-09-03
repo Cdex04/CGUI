@@ -1,0 +1,239 @@
+local Library = {}
+Library.__index = Library
+
+local TabClass = {}
+TabClass.__index = TabClass
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+function Library.CreateWindow(TITEL)
+    local self = setmetatable({}, Library)
+    
+    -- ScreenGui in CoreGui oder gethui platzieren
+    local CGUI = Instance.new("ScreenGui")
+    CGUI.Name = "ExecLibrary_" .. math.random(1000, 9999)
+    
+    if gethui then
+        CGUI.Parent = gethui()
+    elseif syn and syn.protect_gui then
+        syn.protect_gui(CGUI)
+        CGUI.Parent = CoreGui
+    else
+        CGUI.Parent = CoreGui
+    end
+
+    -- Hauptfenster
+    local CWindow = Instance.new("Frame")
+    CWindow.Size = UDim2.new(0, 0, 0, 0)
+    CWindow.Position = UDim2.new(0.09, 0, 0.169, 0)
+    CWindow.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
+    CWindow.BackgroundTransparency = 0.5
+    CWindow.ClipsDescendants = true
+    CWindow.Parent = CGUI
+
+    local CWindowST = Instance.new("UIStroke")
+    CWindowST.Thickness = 2.9
+    CWindowST.Color = Color3.fromRGB(0, 187, 255)
+    CWindowST.Parent = CWindow
+
+    CWindow:TweenSize(UDim2.new(0, 775, 0, 402), "Out", "Quad", 1, true)
+
+    -- Blaue Trennlinie oben
+    local CWindowbarC = Instance.new("Frame")
+    CWindowbarC.Size = UDim2.new(0, 0, 0, 3)
+    CWindowbarC.BackgroundColor3 = Color3.fromRGB(3, 185, 252)
+    CWindowbarC.Position = UDim2.new(-0.001, 0, 0.085, 0)
+    CWindowbarC.BorderSizePixel = 0
+    CWindowbarC.Parent = CWindow
+
+    -- Titel-Text
+    local CWindowText = Instance.new("TextLabel")
+    CWindowText.Text = TITEL
+    CWindowText.Size = UDim2.new(0, 248, 0, 34)
+    CWindowText.TextColor3 = Color3.fromRGB(0, 195, 255)
+    CWindowText.TextScaled = true
+    CWindowText.BackgroundTransparency = 1
+    CWindowText.TextXAlignment = Enum.TextXAlignment.Left
+    CWindowText.Font = Enum.Font.SourceSansBold
+    CWindowText.Parent = CWindow
+    
+    local UIPadding = Instance.new("UIPadding")
+    UIPadding.PaddingLeft = UDim.new(0, 10)
+    UIPadding.Parent = CWindowText
+
+    -- Schließen-Button (X)
+    local CloseButton = Instance.new("TextButton")
+    CloseButton.Text = "X"
+    CloseButton.Size = UDim2.new(0, 35, 0, 34)
+    CloseButton.Position = UDim2.new(1, -40, 0, 0)
+    CloseButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    CloseButton.BackgroundTransparency = 1
+    CloseButton.TextColor3 = Color3.fromRGB(255, 70, 70)
+    CloseButton.Font = Enum.Font.SourceSansBold
+    CloseButton.TextSize = 20
+    CloseButton.Parent = CWindow
+
+    CloseButton.MouseEnter:Connect(function()
+        TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.2, TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+    CloseButton.MouseLeave:Connect(function()
+        TweenService:Create(CloseButton, TweenInfo.new(0.2), {BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 70, 70)}):Play()
+    end)
+
+    CloseButton.MouseButton1Click:Connect(function()
+        CWindow:TweenSize(UDim2.new(0, 0, 0, 0), "In", "Quad", 0.5, true, function()
+            CGUI:Destroy()
+        end)
+    end)
+
+    -- TabBar & Content Layout
+    local TabBar = Instance.new("ScrollingFrame")
+    TabBar.Size = UDim2.new(0, 180, 0, 350)
+    TabBar.Position = UDim2.new(0, 10, 0, 45)
+    TabBar.BackgroundTransparency = 1
+    TabBar.BorderSizePixel = 0
+    TabBar.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TabBar.ScrollBarThickness = 2
+    TabBar.Parent = CWindow
+
+    local TabBarLayout = Instance.new("UIListLayout")
+    TabBarLayout.Padding = UDim.new(0, 5)
+    TabBarLayout.Parent = TabBar
+
+    local ContentContainer = Instance.new("Frame")
+    ContentContainer.Size = UDim2.new(0, 565, 0, 350)
+    ContentContainer.Position = UDim2.new(0, 200, 0, 45)
+    ContentContainer.BackgroundTransparency = 1
+    ContentContainer.ClipsDescendants = true
+    ContentContainer.Parent = CWindow
+
+    -- Drag-Logik
+    local dragging, dragInput, dragStart, startPos
+    local function update(input)
+        local delta = input.Position - dragStart
+        CWindow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+
+    CWindow.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if UserInputService:GetFocusedTextBox() then return end
+            dragging = true
+            dragStart = input.Position
+            startPos = CWindow.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+
+    CWindow.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then update(input) end
+    end)
+
+    task.delay(1.2, function()
+        CWindowbarC:TweenSize(UDim2.new(0, 779, 0, 3), "Out", "Quad", 1.2, true)
+    end)
+
+    -- Speicherung interner Referenzen
+    self.TabBar = TabBar
+    self.ContentContainer = ContentContainer
+    self.Tabs = {}
+    self.ActiveTab = nil
+
+    return self
+end
+
+function Library:CreateTab(tabName)
+    local tabObj = setmetatable({}, TabClass)
+    
+    local Page = Instance.new("ScrollingFrame")
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.Position = UDim2.new(1, 20, 0, 0)
+    Page.BackgroundTransparency = 1
+    Page.BorderSizePixel = 0
+    Page.ScrollBarThickness = 2
+    Page.Parent = self.ContentContainer
+
+    local PageLayout = Instance.new("UIListLayout")
+    PageLayout.Padding = UDim.new(0, 8)
+    PageLayout.Parent = Page
+
+    local TabButton = Instance.new("TextButton")
+    TabButton.Text = tabName
+    TabButton.Size = UDim2.new(1, -5, 0, 35)
+    TabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    TabButton.BackgroundTransparency = 0.3
+    TabButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+    TabButton.Font = Enum.Font.SourceSansBold
+    TabButton.TextSize = 16
+    TabButton.Parent = self.TabBar
+
+    local ButtonST = Instance.new("UIStroke")
+    ButtonST.Thickness = 1.5
+    ButtonST.Color = Color3.fromRGB(45, 45, 45)
+    ButtonST.Parent = TabButton
+
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 6)
+    ButtonCorner.Parent = TabButton
+
+    local function select()
+        if self.ActiveTab == tabName then return end
+
+        if self.ActiveTab and self.Tabs[self.ActiveTab] then
+            local oldTab = self.Tabs[self.ActiveTab]
+            TweenService:Create(oldTab.Button, TweenInfo.new(0.3), {TextColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+            TweenService:Create(oldTab.Button.UIStroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(45, 45, 45)}):Play()
+            oldTab.Page:TweenPosition(UDim2.new(-1, -20, 0, 0), "Out", "Quad", 0.3, true)
+        end
+
+        self.ActiveTab = tabName
+        TweenService:Create(TabButton, TweenInfo.new(0.3), {TextColor3 = Color3.fromRGB(0, 187, 255)}):Play()
+        TweenService:Create(ButtonST, TweenInfo.new(0.3), {Color = Color3.fromRGB(0, 187, 255)}):Play()
+
+        Page.Position = UDim2.new(1, 20, 0, 0)
+        Page:TweenPosition(UDim2.new(0, 0, 0, 0), "Out", "Quad", 0.4, true)
+    end
+
+    TabButton.MouseButton1Click:Connect(select)
+
+    self.Tabs[tabName] = {Page = Page, Button = TabButton}
+
+    if #self.TabBar:GetChildren() == 2 then
+        task.spawn(select)
+    end
+
+    tabObj.Page = Page
+    return tabObj
+end
+
+-- Beispielement: Button zu einem Tab hinzufügen
+function TabClass:AddButton(text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 35)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = text
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 16
+    btn.Parent = self.Page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        pcall(callback)
+    end)
+end
+
+return Library
