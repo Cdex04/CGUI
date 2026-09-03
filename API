@@ -1,4 +1,4 @@
-print("0.0.0.2")
+print("0.0.0.3")
 local Library = {}
 Library.__index = Library
 
@@ -9,6 +9,9 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 
+-- ===================================================
+-- 1. HAUPTFENSTER ERSTELLEN
+-- ===================================================
 function Library.CreateWindow(TITEL)
     local self = setmetatable({}, Library)
     
@@ -151,6 +154,9 @@ function Library.CreateWindow(TITEL)
     return self
 end
 
+-- ===================================================
+-- 2. TABS ERSTELLEN
+-- ===================================================
 function Library:CreateTab(tabName)
     local tabObj = setmetatable({}, TabClass)
     
@@ -215,7 +221,9 @@ function Library:CreateTab(tabName)
     return tabObj
 end
 
--- === BUTTON ERSTELLEN ===
+-- ===================================================
+-- 3. BUTTONS ERSTELLEN
+-- ===================================================
 function TabClass:AddButton(titleText, descriptionText, callback)
     local hasDesc = descriptionText and descriptionText ~= ""
     local btnHeight = hasDesc and 48 or 36
@@ -285,7 +293,9 @@ function TabClass:AddButton(titleText, descriptionText, callback)
     end)
 end
 
--- === SLIDER ERSTELLEN ===
+-- ===================================================
+-- 4. SLIDERS ERSTELLEN
+-- ===================================================
 function TabClass:AddSlider(options, callback)
     options = options or {}
     local titleText = options.Title or "Slider"
@@ -314,7 +324,6 @@ function TabClass:AddSlider(options, callback)
     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = sliderFrame
 
-    -- Titel
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Text = titleText
     titleLabel.Size = UDim2.new(1, -80, 0, 20)
@@ -326,7 +335,6 @@ function TabClass:AddSlider(options, callback)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Parent = sliderFrame
 
-    -- Wert-Anzeige (Oben Rechts)
     local valueLabel = Instance.new("TextLabel")
     valueLabel.Text = tostring(default)
     valueLabel.Size = UDim2.new(0, 60, 0, 20)
@@ -338,7 +346,6 @@ function TabClass:AddSlider(options, callback)
     valueLabel.BackgroundTransparency = 1
     valueLabel.Parent = sliderFrame
 
-    -- Beschreibung (falls angegeben)
     if hasDesc then
         local descLabel = Instance.new("TextLabel")
         descLabel.Text = descriptionText
@@ -352,7 +359,6 @@ function TabClass:AddSlider(options, callback)
         descLabel.Parent = sliderFrame
     end
 
-    -- Slider-Balken (Hintergrund)
     local sliderBar = Instance.new("TextButton")
     sliderBar.Text = ""
     sliderBar.AutoButtonColor = false
@@ -366,7 +372,6 @@ function TabClass:AddSlider(options, callback)
     barCorner.CornerRadius = UDim.new(1, 0)
     barCorner.Parent = sliderBar
 
-    -- Slider-Füllung (Blau)
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
     sliderFill.BackgroundColor3 = Color3.fromRGB(0, 187, 255)
@@ -377,7 +382,6 @@ function TabClass:AddSlider(options, callback)
     fillCorner.CornerRadius = UDim.new(1, 0)
     fillCorner.Parent = sliderFill
 
-    -- Runder Regler-Knopf
     local sliderKnob = Instance.new("Frame")
     sliderKnob.Size = UDim2.new(0, 12, 0, 12)
     sliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -389,7 +393,6 @@ function TabClass:AddSlider(options, callback)
     knobCorner.CornerRadius = UDim.new(1, 0)
     knobCorner.Parent = sliderKnob
 
-    -- Hover-Effekte
     sliderFrame.MouseEnter:Connect(function()
         TweenService:Create(sliderFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
         TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
@@ -402,124 +405,6 @@ function TabClass:AddSlider(options, callback)
         TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(230, 230, 230)}):Play()
     end)
 
-    -- === TOGGLE ERSTELLEN ===
-function TabClass:AddToggle(options, callback)
-    options = options or {}
-    local titleText = options.Title or "Toggle"
-    local descriptionText = options.Description or ""
-    local defaultState = options.Default or false
-
-    local hasDesc = descriptionText ~= ""
-    local frameHeight = hasDesc and 50 or 38
-
-    local toggleFrame = Instance.new("Frame")
-    toggleFrame.Size = UDim2.new(1, -10, 0, frameHeight)
-    toggleFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    toggleFrame.BackgroundTransparency = 0.2
-    toggleFrame.Parent = self.Page
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = toggleFrame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1
-    stroke.Color = Color3.fromRGB(45, 45, 45)
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Parent = toggleFrame
-
-    -- Titel
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Text = titleText
-    titleLabel.Size = UDim2.new(1, -70, 0, hasDesc and 20 or frameHeight)
-    titleLabel.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 0)
-    titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Font = Enum.Font.SourceSansBold
-    titleLabel.TextSize = 16
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Parent = toggleFrame
-
-    -- Beschreibung (falls vorhanden)
-    if hasDesc then
-        local descLabel = Instance.new("TextLabel")
-        descLabel.Text = descriptionText
-        descLabel.Size = UDim2.new(1, -70, 0, 18)
-        descLabel.Position = UDim2.new(0, 12, 0, 24)
-        descLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
-        descLabel.TextXAlignment = Enum.TextXAlignment.Left
-        descLabel.Font = Enum.Font.SourceSans
-        descLabel.TextSize = 13
-        descLabel.BackgroundTransparency = 1
-        descLabel.Parent = toggleFrame
-    end
-
-    -- Toggle-Hintergrund (Hülle)
-    local toggleBox = Instance.new("TextButton")
-    toggleBox.Text = ""
-    toggleBox.AutoButtonColor = false
-    toggleBox.Size = UDim2.new(0, 42, 0, 22)
-    toggleBox.Position = UDim2.new(1, -54, 0.5, -11)
-    toggleBox.BackgroundColor3 = defaultState and Color3.fromRGB(0, 187, 255) or Color3.fromRGB(40, 40, 40)
-    toggleBox.Parent = toggleFrame
-
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(1, 0)
-    boxCorner.Parent = toggleBox
-
-    -- Toggle-Knopf (Gleitender Kreis)
-    local toggleKnob = Instance.new("Frame")
-    toggleKnob.Size = UDim2.new(0, 16, 0, 16)
-    toggleKnob.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-    toggleKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    toggleKnob.Parent = toggleBox
-
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = toggleKnob
-
-    -- Hover-Effekte
-    toggleFrame.MouseEnter:Connect(function()
-        TweenService:Create(toggleFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
-        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-    end)
-
-    toggleFrame.MouseLeave:Connect(function()
-        TweenService:Create(toggleFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 45, 45)}):Play()
-        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(230, 230, 230)}):Play()
-    end)
-
-    -- Click & Animation Logik
-    local state = defaultState
-
-    local function toggle()
-        state = not state
-        
-        local targetColor = state and Color3.fromRGB(0, 187, 255) or Color3.fromRGB(40, 40, 40)
-        local targetPos = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-
-        TweenService:Create(toggleBox, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetColor}):Play()
-        TweenService:Create(toggleKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
-
-        if callback then
-            pcall(callback, state)
-        end
-    end
-
-    toggleBox.MouseButton1Click:Connect(toggle)
-    
-    -- Ermöglicht Klick auf das gesamte Frame, um den Toggle umzuschalten
-    local invisibleBtn = Instance.new("TextButton")
-    invisibleBtn.Size = UDim2.new(1, -50, 1, 0)
-    invisibleBtn.BackgroundTransparency = 1
-    invisibleBtn.Text = ""
-    invisibleBtn.Parent = toggleFrame
-    invisibleBtn.MouseButton1Click:Connect(toggle)
-end
-
-    -- Logik für das Ziehen
     local isDragging = false
 
     local function round(num, bracket)
@@ -538,14 +423,11 @@ end
         local step = 10 ^ (-rounding)
         local roundedValue = round(rawValue, step)
         
-        -- Wert im gültigen Bereich halten
         roundedValue = math.clamp(roundedValue, min, max)
 
-        -- Fortschrittsbalken aktualisieren
         local fillRatio = (roundedValue - min) / (max - min)
         TweenService:Create(sliderFill, TweenInfo.new(0.05), {Size = UDim2.new(fillRatio, 0, 1, 0)}):Play()
 
-        -- Text formatieren & anzeigen
         if rounding == 0 then
             valueLabel.Text = tostring(math.floor(roundedValue))
         else
@@ -575,6 +457,118 @@ end
             updateValue(input)
         end
     end)
+end
+
+-- ===================================================
+-- 5. TOGGLES ERSTELLEN
+-- ===================================================
+function TabClass:AddToggle(options, callback)
+    options = options or {}
+    local titleText = options.Title or "Toggle"
+    local descriptionText = options.Description or ""
+    local defaultState = options.Default or false
+
+    local hasDesc = descriptionText ~= ""
+    local frameHeight = hasDesc and 50 or 38
+
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Size = UDim2.new(1, -10, 0, frameHeight)
+    toggleFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    toggleFrame.BackgroundTransparency = 0.2
+    toggleFrame.Parent = self.Page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = toggleFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(45, 45, 45)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = toggleFrame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Text = titleText
+    titleLabel.Size = UDim2.new(1, -70, 0, hasDesc and 20 or frameHeight)
+    titleLabel.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 0)
+    titleLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextSize = 16
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Parent = toggleFrame
+
+    if hasDesc then
+        local descLabel = Instance.new("TextLabel")
+        descLabel.Text = descriptionText
+        descLabel.Size = UDim2.new(1, -70, 0, 18)
+        descLabel.Position = UDim2.new(0, 12, 0, 24)
+        descLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+        descLabel.Font = Enum.Font.SourceSans
+        descLabel.TextSize = 13
+        descLabel.BackgroundTransparency = 1
+        descLabel.Parent = toggleFrame
+    end
+
+    local toggleBox = Instance.new("TextButton")
+    toggleBox.Text = ""
+    toggleBox.AutoButtonColor = false
+    toggleBox.Size = UDim2.new(0, 42, 0, 22)
+    toggleBox.Position = UDim2.new(1, -54, 0.5, -11)
+    toggleBox.BackgroundColor3 = defaultState and Color3.fromRGB(0, 187, 255) or Color3.fromRGB(40, 40, 40)
+    toggleBox.Parent = toggleFrame
+
+    local boxCorner = Instance.new("UICorner")
+    boxCorner.CornerRadius = UDim.new(1, 0)
+    boxCorner.Parent = toggleBox
+
+    local toggleKnob = Instance.new("Frame")
+    toggleKnob.Size = UDim2.new(0, 16, 0, 16)
+    toggleKnob.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    toggleKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleKnob.Parent = toggleBox
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = toggleKnob
+
+    toggleFrame.MouseEnter:Connect(function()
+        TweenService:Create(toggleFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
+        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+
+    toggleFrame.MouseLeave:Connect(function()
+        TweenService:Create(toggleFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 45, 45)}):Play()
+        TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(230, 230, 230)}):Play()
+    end)
+
+    local state = defaultState
+
+    local function toggle()
+        state = not state
+        
+        local targetColor = state and Color3.fromRGB(0, 187, 255) or Color3.fromRGB(40, 40, 40)
+        local targetPos = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+
+        TweenService:Create(toggleBox, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetColor}):Play()
+        TweenService:Create(toggleKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
+
+        if callback then
+            pcall(callback, state)
+        end
+    end
+
+    toggleBox.MouseButton1Click:Connect(toggle)
+    
+    local invisibleBtn = Instance.new("TextButton")
+    invisibleBtn.Size = UDim2.new(1, -50, 1, 0)
+    invisibleBtn.BackgroundTransparency = 1
+    invisibleBtn.Text = ""
+    invisibleBtn.Parent = toggleFrame
+    invisibleBtn.MouseButton1Click:Connect(toggle)
 end
 
 return Library
