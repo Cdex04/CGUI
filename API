@@ -1,4 +1,4 @@
-print("0.0.0.6")
+print("0.0.0.5")
 local Library = {}
 Library.__index = Library
 
@@ -139,25 +139,9 @@ function Library:Notify(options)
 end
 
 -- ===================================================
--- 2. WINDOW CREATION (WITH KEY SYSTEM SUPPORT)
+-- 2. WINDOW CREATION (DRAG BUG FIX)
 -- ===================================================
-function Library.CreateWindow(options)
-    local title = "Window"
-    local useKeySystem = false
-    local validKey = ""
-    local keyLink = ""
-    local keyDescription = "Bitte fordere einen Schlüssel an, um Zugriff auf die UI zu erhalten."
-
-    if type(options) == "table" then
-        title = options.Title or options.TITEL or "Window"
-        useKeySystem = options.KeySystem or false
-        validKey = options.Key or ""
-        keyLink = options.KeyLink or ""
-        keyDescription = options.Description or keyDescription
-    else
-        title = tostring(options or "Window")
-    end
-
+function Library.CreateWindow(TITEL)
     local self = setmetatable({}, Library)
     
     local CGUI = Instance.new("ScreenGui")
@@ -178,7 +162,6 @@ function Library.CreateWindow(options)
     CWindow.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
     CWindow.BackgroundTransparency = 0.5
     CWindow.ClipsDescendants = true
-    CWindow.Visible = not useKeySystem
     CWindow.Parent = CGUI
 
     local CWindowST = Instance.new("UIStroke")
@@ -186,14 +169,7 @@ function Library.CreateWindow(options)
     CWindowST.Color = Color3.fromRGB(0, 187, 255)
     CWindowST.Parent = CWindow
 
-    local function openMainWindow()
-        CWindow.Visible = true
-        CWindow:TweenSize(UDim2.new(0, 775, 0, 402), "Out", "Quad", 1, true)
-    end
-
-    if not useKeySystem then
-        openMainWindow()
-    end
+    CWindow:TweenSize(UDim2.new(0, 775, 0, 402), "Out", "Quad", 1, true)
 
     local CWindowbarC = Instance.new("Frame")
     CWindowbarC.Size = UDim2.new(0, 0, 0, 3)
@@ -203,7 +179,7 @@ function Library.CreateWindow(options)
     CWindowbarC.Parent = CWindow
 
     local CWindowText = Instance.new("TextLabel")
-    CWindowText.Text = title
+    CWindowText.Text = TITEL
     CWindowText.Size = UDim2.new(0, 248, 0, 34)
     CWindowText.TextColor3 = Color3.fromRGB(0, 195, 255)
     CWindowText.TextScaled = true
@@ -293,205 +269,6 @@ function Library.CreateWindow(options)
     task.delay(1.2, function()
         CWindowbarC:TweenSize(UDim2.new(0, 779, 0, 3), "Out", "Quad", 1.2, true)
     end)
-
-    -- ===================================================
-    -- KEY SYSTEM UI INJECTION
-    -- ===================================================
-    if useKeySystem then
-        local KeyFrame = Instance.new("Frame")
-        KeyFrame.Size = UDim2.new(0, 0, 0, 0)
-        KeyFrame.Position = UDim2.new(0.35, 0, 0.3, 0)
-        KeyFrame.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
-        KeyFrame.BackgroundTransparency = 0.2
-        KeyFrame.ClipsDescendants = true
-        KeyFrame.Parent = CGUI
-
-        local KeyStroke = Instance.new("UIStroke")
-        KeyStroke.Thickness = 2.5
-        KeyStroke.Color = Color3.fromRGB(0, 187, 255)
-        KeyStroke.Parent = KeyFrame
-
-        local KeyCorner = Instance.new("UICorner")
-        KeyCorner.CornerRadius = UDim.new(0, 8)
-        KeyCorner.Parent = KeyFrame
-
-        KeyFrame:TweenSize(UDim2.new(0, 360, 0, 240), "Out", "Quad", 0.6, true)
-
-        local KeyTitle = Instance.new("TextLabel")
-        KeyTitle.Text = title .. " - Key System"
-        KeyTitle.Size = UDim2.new(1, -20, 0, 30)
-        KeyTitle.Position = UDim2.new(0, 10, 0, 8)
-        KeyTitle.TextColor3 = Color3.fromRGB(0, 187, 255)
-        KeyTitle.Font = Enum.Font.SourceSansBold
-        KeyTitle.TextSize = 18
-        KeyTitle.TextXAlignment = Enum.TextXAlignment.Left
-        KeyTitle.BackgroundTransparency = 1
-        KeyTitle.Parent = KeyFrame
-
-        local KeyDesc = Instance.new("TextLabel")
-        KeyDesc.Text = keyDescription
-        KeyDesc.Size = UDim2.new(1, -20, 0, 36)
-        KeyDesc.Position = UDim2.new(0, 10, 0, 38)
-        KeyDesc.TextColor3 = Color3.fromRGB(170, 170, 170)
-        KeyDesc.Font = Enum.Font.SourceSans
-        KeyDesc.TextSize = 13
-        KeyDesc.TextWrapped = true
-        KeyDesc.TextXAlignment = Enum.TextXAlignment.Left
-        KeyDesc.BackgroundTransparency = 1
-        KeyDesc.Parent = KeyFrame
-
-        -- Input Box
-        local KeyInput = Instance.new("TextBox")
-        KeyInput.PlaceholderText = "Key hier eingeben..."
-        KeyInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
-        KeyInput.Text = ""
-        KeyInput.Size = UDim2.new(1, -20, 0, 38)
-        KeyInput.Position = UDim2.new(0, 10, 0, 82)
-        KeyInput.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-        KeyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-        KeyInput.Font = Enum.Font.SourceSansBold
-        KeyInput.TextSize = 14
-        KeyInput.ClearTextOnFocus = false
-        KeyInput.Parent = KeyFrame
-
-        local KeyInputCorner = Instance.new("UICorner")
-        KeyInputCorner.CornerRadius = UDim.new(0, 6)
-        KeyInputCorner.Parent = KeyInput
-
-        local KeyInputStroke = Instance.new("UIStroke")
-        KeyInputStroke.Thickness = 1
-        KeyInputStroke.Color = Color3.fromRGB(45, 45, 45)
-        KeyInputStroke.Parent = KeyInput
-
-        KeyInput.Focused:Connect(function()
-            isInteracting = true
-            TweenService:Create(KeyInputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 187, 255)}):Play()
-        end)
-        KeyInput.FocusLost:Connect(function()
-            isInteracting = false
-            TweenService:Create(KeyInputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 45, 45)}):Play()
-        end)
-
-        -- Get Key Button
-        local GetKeyBtn = Instance.new("TextButton")
-        GetKeyBtn.Text = "Get Key Link"
-        GetKeyBtn.Size = UDim2.new(0.46, 0, 0, 36)
-        GetKeyBtn.Position = UDim2.new(0, 10, 0, 130)
-        GetKeyBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        GetKeyBtn.TextColor3 = Color3.fromRGB(0, 187, 255)
-        GetKeyBtn.Font = Enum.Font.SourceSansBold
-        GetKeyBtn.TextSize = 14
-        GetKeyBtn.Parent = KeyFrame
-
-        local GetKeyCorner = Instance.new("UICorner")
-        GetKeyCorner.CornerRadius = UDim.new(0, 6)
-        GetKeyCorner.Parent = GetKeyBtn
-
-        local GetKeyStroke = Instance.new("UIStroke")
-        GetKeyStroke.Thickness = 1
-        GetKeyStroke.Color = Color3.fromRGB(0, 187, 255)
-        GetKeyStroke.Parent = GetKeyBtn
-
-        GetKeyBtn.MouseEnter:Connect(function()
-            TweenService:Create(GetKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}):Play()
-        end)
-        GetKeyBtn.MouseLeave:Connect(function()
-            TweenService:Create(GetKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
-        end)
-
-        GetKeyBtn.MouseButton1Click:Connect(function()
-            if setclipboard then
-                setclipboard(keyLink)
-            end
-            GetKeyBtn.Text = "Kopiert!"
-            TweenService:Create(GetKeyBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(0, 140, 200), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-            task.delay(1.5, function()
-                GetKeyBtn.Text = "Get Key Link"
-                TweenService:Create(GetKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 30), TextColor3 = Color3.fromRGB(0, 187, 255)}):Play()
-            end)
-        end)
-
-        -- Submit Button
-        local SubmitBtn = Instance.new("TextButton")
-        SubmitBtn.Text = "Submit Key"
-        SubmitBtn.Size = UDim2.new(0.46, 0, 0, 36)
-        SubmitBtn.Position = UDim2.new(0.54, -10, 0, 130)
-        SubmitBtn.BackgroundColor3 = Color3.fromRGB(0, 187, 255)
-        SubmitBtn.TextColor3 = Color3.fromRGB(15, 15, 15)
-        SubmitBtn.Font = Enum.Font.SourceSansBold
-        SubmitBtn.TextSize = 14
-        SubmitBtn.Parent = KeyFrame
-
-        local SubmitCorner = Instance.new("UICorner")
-        SubmitCorner.CornerRadius = UDim.new(0, 6)
-        SubmitCorner.Parent = SubmitBtn
-
-        SubmitBtn.MouseEnter:Connect(function()
-            TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 210, 255)}):Play()
-        end)
-        SubmitBtn.MouseLeave:Connect(function()
-            TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 187, 255)}):Play()
-        end)
-
-        -- Drag Key Window Support
-        local kDragging, kDragInput, kDragStart, kStartPos
-        KeyFrame.InputBegan:Connect(function(input)
-            if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not isInteracting then
-                if UserInputService:GetFocusedTextBox() then return end
-                kDragging = true
-                kDragStart = input.Position
-                kStartPos = KeyFrame.Position
-
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then kDragging = false end
-                end)
-            end
-        end)
-
-        KeyFrame.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                kDragInput = input
-            end
-        end)
-
-        UserInputService.InputChanged:Connect(function(input)
-            if input == kDragInput and kDragging and not isInteracting then
-                local delta = input.Position - kDragStart
-                KeyFrame.Position = UDim2.new(kStartPos.X.Scale, kStartPos.X.Offset + delta.X, kStartPos.Y.Scale, kStartPos.Y.Offset + delta.Y)
-            end
-        end)
-
-        SubmitBtn.MouseButton1Click:Connect(function()
-            if KeyInput.Text == validKey then
-                SubmitBtn.Text = "Erfolgreich!"
-                TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 230, 120)}):Play()
-                task.wait(0.5)
-                
-                KeyFrame:TweenSize(UDim2.new(0, 0, 0, 0), "In", "Quad", 0.4, true, function()
-                    KeyFrame:Destroy()
-                    openMainWindow()
-                end)
-            else
-                SubmitBtn.Text = "Falscher Key!"
-                TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(230, 50, 50), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-                
-                -- Wackel-Animation (Shake)
-                local origPos = KeyFrame.Position
-                for i = 1, 3 do
-                    KeyFrame.Position = origPos + UDim2.new(0, -6, 0, 0)
-                    task.wait(0.04)
-                    KeyFrame.Position = origPos + UDim2.new(0, 6, 0, 0)
-                    task.wait(0.04)
-                end
-                KeyFrame.Position = origPos
-
-                task.delay(1.2, function()
-                    SubmitBtn.Text = "Submit Key"
-                    TweenService:Create(SubmitBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 187, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
-                end)
-            end
-        end)
-    end
 
     self.WindowFrame = CWindow
     self.TabBar = TabBar
@@ -987,7 +764,7 @@ function TabClass:AddText(text)
 end
 
 -- ===================================================
--- 9. COLOR PICKER
+-- 9. COLOR PICKER (DRAG FIX INKLUSIVE)
 -- ===================================================
 function TabClass:AddColorPicker(options, callback)
     options = options or {}
@@ -1197,7 +974,7 @@ function TabClass:AddColorPicker(options, callback)
 end
 
 -- ===================================================
--- 10. DROPDOWN
+-- 10. DROPDOWN (NEU)
 -- ===================================================
 function TabClass:AddDropdown(options, callback)
     options = options or {}
@@ -1309,7 +1086,7 @@ function TabClass:AddDropdown(options, callback)
 end
 
 -- ===================================================
--- 11. KEYBIND
+-- 11. KEYBIND (NEU)
 -- ===================================================
 function TabClass:AddKeybind(options, callback)
     options = options or {}
