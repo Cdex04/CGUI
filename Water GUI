@@ -6,14 +6,12 @@ local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- WATER CLIENT LIBARY
+-- WATER CLIENT LIBRARY
 local WaterClient = {
     Tabs = {},
     Modules = {},
     HUD = {
         ShowFPS = true,
-        ShowPing = true,
-        ShowPlayers = true,
         ShowActiveMods = true,
         ShowRadar = true
     },
@@ -38,7 +36,7 @@ blur.Enabled = true
 blur.Parent = Lighting
 WaterClient.Blur = blur
 
--- Helper Function for Smooth Tweens & UI Styling
+-- UI Helpers
 local function AddCorner(parent, radius)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, radius or 8)
@@ -55,8 +53,78 @@ local function AddStroke(parent, color, thickness)
     return stroke
 end
 
+-- Container Folders
+local ModulesHolder = Instance.new("Folder", ScreenGui)
+ModulesHolder.Name = "ModulesHolder"
+
 -- =================================================================
--- 1. TOP NAVBAR (Modules | HUD | Settings)
+-- 1. WINDOW OVERLAYS (HUD, Settings & Module Options)
+-- =================================================================
+local HUDFrame = Instance.new("Frame")
+HUDFrame.Size = UDim2.new(0, 260, 0, 220)
+HUDFrame.Position = UDim2.new(0.5, -130, 0.5, -110)
+HUDFrame.BackgroundColor3 = WaterClient.SecondaryColor
+HUDFrame.Visible = false
+HUDFrame.Active = true
+HUDFrame.Draggable = true
+HUDFrame.Parent = ScreenGui
+AddCorner(HUDFrame, 10)
+AddStroke(HUDFrame, WaterClient.AccentColor, 1)
+
+local SettingsFrame = Instance.new("Frame")
+SettingsFrame.Size = UDim2.new(0, 260, 0, 200)
+SettingsFrame.Position = UDim2.new(0.5, -130, 0.5, -100)
+SettingsFrame.BackgroundColor3 = WaterClient.SecondaryColor
+SettingsFrame.Visible = false
+SettingsFrame.Active = true
+SettingsFrame.Draggable = true
+SettingsFrame.Parent = ScreenGui
+AddCorner(SettingsFrame, 10)
+AddStroke(SettingsFrame, WaterClient.AccentColor, 1)
+
+local ModSettingsFrame = Instance.new("Frame")
+ModSettingsFrame.Size = UDim2.new(0, 280, 0, 220)
+ModSettingsFrame.Position = UDim2.new(0.5, -140, 0.5, -110)
+ModSettingsFrame.BackgroundColor3 = WaterClient.SecondaryColor
+ModSettingsFrame.Visible = false
+ModSettingsFrame.Active = true
+ModSettingsFrame.Draggable = true
+ModSettingsFrame.Parent = ScreenGui
+AddCorner(ModSettingsFrame, 10)
+AddStroke(ModSettingsFrame, WaterClient.AccentColor, 1)
+
+-- Function to show normal UI (Tabs)
+local function ShowMainTabs()
+    ModulesHolder.Parent = ScreenGui
+    HUDFrame.Visible = false
+    SettingsFrame.Visible = false
+    ModSettingsFrame.Visible = false
+end
+
+-- Create Window Close Button (X)
+local function AddCloseButton(frame)
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 24, 0, 24)
+    closeBtn.Position = UDim2.new(1, -30, 0, 8)
+    closeBtn.Text = "X"
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 13
+    closeBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+    closeBtn.BackgroundColor3 = WaterClient.CardColor
+    closeBtn.Parent = frame
+    AddCorner(closeBtn, 4)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        ShowMainTabs()
+    end)
+end
+
+AddCloseButton(HUDFrame)
+AddCloseButton(SettingsFrame)
+AddCloseButton(ModSettingsFrame)
+
+-- =================================================================
+-- 2. TOP NAVBAR
 -- =================================================================
 local TopNav = Instance.new("Frame")
 TopNav.Name = "TopNav"
@@ -70,7 +138,6 @@ TopNav.Parent = ScreenGui
 AddCorner(TopNav, 12)
 AddStroke(TopNav, WaterClient.AccentColor, 1.5)
 
--- Client Title
 local WaterLogo = Instance.new("TextLabel")
 WaterLogo.Size = UDim2.new(0, 120, 1, 0)
 WaterLogo.Position = UDim2.new(0, 12, 0, 0)
@@ -93,34 +160,7 @@ local NavPadding = Instance.new("UIPadding")
 NavPadding.PaddingRight = UDim.new(0, 10)
 NavPadding.Parent = TopNav
 
--- State Frames
-local ModulesHolder = Instance.new("Folder", ScreenGui)
-ModulesHolder.Name = "ModulesHolder"
-
-local HUDFrame = Instance.new("Frame")
-HUDFrame.Size = UDim2.new(0, 220, 0, 240)
-HUDFrame.Position = UDim2.new(0.5, -110, 0.5, -120)
-HUDFrame.BackgroundColor3 = WaterClient.SecondaryColor
-HUDFrame.Visible = false
-HUDFrame.Active = true
-HUDFrame.Draggable = true
-HUDFrame.Parent = ScreenGui
-AddCorner(HUDFrame, 10)
-AddStroke(HUDFrame, WaterClient.AccentColor, 1)
-
-local SettingsFrame = Instance.new("Frame")
-SettingsFrame.Size = UDim2.new(0, 250, 0, 180)
-SettingsFrame.Position = UDim2.new(0.5, -125, 0.5, -90)
-SettingsFrame.BackgroundColor3 = WaterClient.SecondaryColor
-SettingsFrame.Visible = false
-SettingsFrame.Active = true
-SettingsFrame.Draggable = true
-SettingsFrame.Parent = ScreenGui
-AddCorner(SettingsFrame, 10)
-AddStroke(SettingsFrame, WaterClient.AccentColor, 1)
-
--- Nav Button Creator
-local function CreateNavButton(name, targetFrame, toggleModules)
+local function CreateNavButton(name, action)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 85, 0, 28)
     btn.Text = name
@@ -131,20 +171,28 @@ local function CreateNavButton(name, targetFrame, toggleModules)
     btn.Parent = TopNav
     AddCorner(btn, 6)
 
-    btn.MouseButton1Click:Connect(function()
-        if toggleModules then
-            ModulesHolder.Parent = (ModulesHolder.Parent == ScreenGui) and nil or ScreenGui
-        else
-            targetFrame.Visible = not targetFrame.Visible
-        end
-    end)
+    btn.MouseButton1Click:Connect(action)
 end
 
-CreateNavButton("Modules", nil, true)
-CreateNavButton("HUD", HUDFrame, false)
-CreateNavButton("Settings", SettingsFrame, false)
+CreateNavButton("Modules", function()
+    ShowMainTabs()
+end)
 
--- Global Toggle (RightShift)
+CreateNavButton("HUD", function()
+    ModulesHolder.Parent = nil
+    SettingsFrame.Visible = false
+    ModSettingsFrame.Visible = false
+    HUDFrame.Visible = true
+end)
+
+CreateNavButton("Settings", function()
+    ModulesHolder.Parent = nil
+    HUDFrame.Visible = false
+    ModSettingsFrame.Visible = false
+    SettingsFrame.Visible = true
+end)
+
+-- Global Toggle (RightShift) - Blends UI & Blur ein/aus
 UserInputService.InputBegan:Connect(function(input, gpe)
     if not gpe and input.KeyCode == WaterClient.ToggleKey then
         WaterClient.Open = not WaterClient.Open
@@ -154,7 +202,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- =================================================================
--- 2. MODULE TABS SYSTEM (Auto-Spawning side by side)
+-- 3. MODULE TABS SYSTEM
 -- =================================================================
 function WaterClient:CreateTab(name)
     local tabCount = #WaterClient.Tabs
@@ -201,15 +249,13 @@ function WaterClient:CreateTab(name)
     local tabData = {Frame = TabFrame, Container = Container, Modules = {}}
     table.insert(WaterClient.Tabs, tabData)
 
-    -- Module Creation
     function tabData:CreateModule(modName, callback)
         local modData = {
             Name = modName,
             Enabled = false,
             Mode = "Toggle",
             Keybind = nil,
-            Callback = callback or function() end,
-            Settings = {}
+            Callback = callback or function() end
         }
 
         local ModButton = Instance.new("TextButton")
@@ -224,7 +270,6 @@ function WaterClient:CreateTab(name)
         ModButton.Parent = Container
         AddCorner(ModButton, 4)
 
-        -- Adjust Container height
         UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             Container.Size = UDim2.new(1, 0, 0, UIListLayout.AbsoluteContentSize.Y)
         end)
@@ -242,13 +287,13 @@ function WaterClient:CreateTab(name)
             WaterClient:UpdateActiveHUD()
         end
 
-        -- Left Click = Toggle, Right Click = Module Settings Menu
         ModButton.MouseButton1Click:Connect(function()
             if modData.Mode == "Toggle" then ToggleModule() end
         end)
 
+        -- Rechtsklick schließt alles andere und öffnet Settings-Fenster
         ModButton.MouseButton2Click:Connect(function()
-            WaterClient:OpenModuleSettings(modData, ModButton)
+            WaterClient:OpenModuleSettings(modData)
         end)
 
         -- Keybind Support
@@ -282,37 +327,53 @@ function WaterClient:CreateTab(name)
 end
 
 -- =================================================================
--- 3. RIGHT-CLICK MODULE SETTINGS MENU (Keybind & Dropdown + Options)
+-- 4. EXTRA SETTINGS WINDOW FOR MODULES
 -- =================================================================
-function WaterClient:OpenModuleSettings(modData, parentBtn)
-    if ScreenGui:FindFirstChild("ModuleSettingsMenu") then
-        ScreenGui.ModuleSettingsMenu:Destroy()
+function WaterClient:OpenModuleSettings(modData)
+    ModulesHolder.Parent = nil
+    HUDFrame.Visible = false
+    SettingsFrame.Visible = false
+
+    -- Clear old settings UI elements
+    for _, child in pairs(ModSettingsFrame:GetChildren()) do
+        if not child:IsA("UICorner") and not child:IsA("UIStroke") and child.Text ~= "X" then
+            child:Destroy()
+        end
     end
 
-    local Menu = Instance.new("Frame")
-    Menu.Name = "ModuleSettingsMenu"
-    Menu.Size = UDim2.new(0, 170, 0, 75)
-    Menu.Position = UDim2.new(0, parentBtn.AbsolutePosition.X + 180, 0, parentBtn.AbsolutePosition.Y)
-    Menu.BackgroundColor3 = WaterClient.SecondaryColor
-    Menu.Parent = ScreenGui
-    AddCorner(Menu, 6)
-    AddStroke(Menu, WaterClient.AccentColor, 1)
+    ModSettingsFrame.Visible = true
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -40, 0, 30)
+    Title.Position = UDim2.new(0, 12, 0, 5)
+    Title.Text = modData.Name .. " Settings"
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.TextColor3 = WaterClient.AccentColor
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.BackgroundTransparency = 1
+    Title.Parent = ModSettingsFrame
+
+    local ContentContainer = Instance.new("Frame")
+    ContentContainer.Size = UDim2.new(1, -20, 1, -45)
+    ContentContainer.Position = UDim2.new(0, 10, 0, 38)
+    ContentContainer.BackgroundTransparency = 1
+    ContentContainer.Parent = ModSettingsFrame
 
     local Layout = Instance.new("UIListLayout")
-    Layout.Padding = UDim.new(0, 4)
-    Layout.Parent = Menu
+    Layout.Padding = UDim.new(0, 8)
+    Layout.Parent = ContentContainer
 
-    -- Keybind Selector Button
+    -- Keybind Selector
     local KeyBtn = Instance.new("TextButton")
-    KeyBtn.Size = UDim2.new(1, -8, 0, 32)
-    KeyBtn.Position = UDim2.new(0, 4, 0, 4)
+    KeyBtn.Size = UDim2.new(1, 0, 0, 34)
     KeyBtn.Text = "Keybind: " .. (modData.Keybind and modData.Keybind.Name or "None")
     KeyBtn.Font = Enum.Font.Gotham
     KeyBtn.TextSize = 12
-    KeyBtn.TextColor3 = Color3.fromRGB(220, 240, 255)
+    KeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     KeyBtn.BackgroundColor3 = WaterClient.CardColor
-    KeyBtn.Parent = Menu
-    AddCorner(KeyBtn, 4)
+    KeyBtn.Parent = ContentContainer
+    AddCorner(KeyBtn, 6)
 
     KeyBtn.MouseButton1Click:Connect(function()
         KeyBtn.Text = "Press Key..."
@@ -327,48 +388,56 @@ function WaterClient:OpenModuleSettings(modData, parentBtn)
 
     -- Dropdown Mode Button (Toggle vs Hold)
     local ModeBtn = Instance.new("TextButton")
-    ModeBtn.Size = UDim2.new(1, -8, 0, 32)
-    ModeBtn.Text = "Mode: " .. modData.Mode
+    ModeBtn.Size = UDim2.new(1, 0, 0, 34)
+    ModeBtn.Text = "Trigger Mode: " .. modData.Mode
     ModeBtn.Font = Enum.Font.Gotham
     ModeBtn.TextSize = 12
-    ModeBtn.TextColor3 = Color3.fromRGB(220, 240, 255)
+    ModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     ModeBtn.BackgroundColor3 = WaterClient.CardColor
-    ModeBtn.Parent = Menu
-    AddCorner(ModeBtn, 4)
+    ModeBtn.Parent = ContentContainer
+    AddCorner(ModeBtn, 6)
 
     ModeBtn.MouseButton1Click:Connect(function()
         modData.Mode = (modData.Mode == "Toggle") and "Hold" or "Toggle"
-        ModeBtn.Text = "Mode: " .. modData.Mode
+        ModeBtn.Text = "Trigger Mode: " .. modData.Mode
     end)
 end
 
 -- =================================================================
--- 4. HUD CONTROLS & OVERLAYS
+-- 5. HUD OVERLAYS (NUR ANZEIGEN WENN GUI GESCHLOSSEN IST)
 -- =================================================================
--- Build HUD GUI Window Content
+-- HUD GUI Window Config Content
 local HUDTitle = Instance.new("TextLabel")
-HUDTitle.Size = UDim2.new(1, 0, 0, 30)
+HUDTitle.Size = UDim2.new(1, -40, 0, 30)
+HUDTitle.Position = UDim2.new(0, 12, 0, 5)
 HUDTitle.Text = "HUD Settings"
 HUDTitle.Font = Enum.Font.GothamBold
 HUDTitle.TextSize = 14
 HUDTitle.TextColor3 = WaterClient.AccentColor
+HUDTitle.TextXAlignment = Enum.TextXAlignment.Left
+HUDTitle.BackgroundTransparency = 1
 HUDTitle.Parent = HUDFrame
 
+local HUDContainer = Instance.new("Frame")
+HUDContainer.Size = UDim2.new(1, -20, 1, -45)
+HUDContainer.Position = UDim2.new(0, 10, 0, 38)
+HUDContainer.BackgroundTransparency = 1
+HUDContainer.Parent = HUDFrame
+
 local HUDList = Instance.new("UIListLayout")
-HUDList.Padding = UDim.new(0, 5)
-HUDList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-HUDList.Parent = HUDFrame
+HUDList.Padding = UDim.new(0, 6)
+HUDList.Parent = HUDContainer
 
 local function CreateHUDToggle(name, configKey)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.9, 0, 0, 30)
+    btn.Size = UDim2.new(1, 0, 0, 32)
     btn.Text = name .. ": " .. (WaterClient.HUD[configKey] and "ON" or "OFF")
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.BackgroundColor3 = WaterClient.CardColor
-    btn.Parent = HUDFrame
-    AddCorner(btn, 4)
+    btn.Parent = HUDContainer
+    AddCorner(btn, 6)
 
     btn.MouseButton1Click:Connect(function()
         WaterClient.HUD[configKey] = not WaterClient.HUD[configKey]
@@ -380,7 +449,7 @@ CreateHUDToggle("FPS / Ping Display", "ShowFPS")
 CreateHUDToggle("Active Modules List", "ShowActiveMods")
 CreateHUDToggle("2D Radar", "ShowRadar")
 
--- Active Modules HUD (Top-Right)
+-- Active Modules List (Oben Rechts)
 local ActiveListFrame = Instance.new("Frame")
 ActiveListFrame.Size = UDim2.new(0, 160, 0, 400)
 ActiveListFrame.Position = UDim2.new(1, -170, 0, 15)
@@ -397,7 +466,8 @@ function WaterClient:UpdateActiveHUD()
         if child:IsA("TextLabel") then child:Destroy() end
     end
 
-    if not WaterClient.HUD.ShowActiveMods then return end
+    -- Nur zeichnen, wenn HUD aktiv UND die GUI Geschlossen ist
+    if not WaterClient.HUD.ShowActiveMods or WaterClient.Open then return end
 
     for _, mod in pairs(WaterClient.Modules) do
         if mod.Enabled then
@@ -429,7 +499,8 @@ local frameCount, lastFpsUpdate = 0, os.clock()
 RunService.RenderStepped:Connect(function()
     frameCount = frameCount + 1
     if os.clock() - lastFpsUpdate >= 1 then
-        if WaterClient.HUD.ShowFPS then
+        -- Zeige FPS/Ping nur an, wenn GUI geschlossen ist!
+        if WaterClient.HUD.ShowFPS and not WaterClient.Open then
             local fps = frameCount
             local ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
             local pCount = #Players:GetPlayers()
@@ -443,7 +514,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 2D Radar Implementation
+-- 2D Radar
 local RadarFrame = Instance.new("Frame")
 RadarFrame.Size = UDim2.new(0, 120, 0, 120)
 RadarFrame.Position = UDim2.new(1, -135, 1, -135)
@@ -461,10 +532,12 @@ CenterDot.Parent = RadarFrame
 AddCorner(CenterDot, 2)
 
 RunService.RenderStepped:Connect(function()
-    RadarFrame.Visible = WaterClient.HUD.ShowRadar
-    if not WaterClient.HUD.ShowRadar then return end
+    -- Radar wird nur angezeigt, wenn GUI Geschlossen ist!
+    local shouldShowRadar = WaterClient.HUD.ShowRadar and not WaterClient.Open
+    RadarFrame.Visible = shouldShowRadar
+    
+    if not shouldShowRadar then return end
 
-    -- Clean old player dots
     for _, child in pairs(RadarFrame:GetChildren()) do
         if child.Name == "PlayerDot" then child:Destroy() end
     end
@@ -477,7 +550,6 @@ RunService.RenderStepped:Connect(function()
                 local enemyPos = p.Character.HumanoidRootPart.Position
                 local relPos = enemyPos - myPos
                 
-                -- Map world offset to 2D Radar (Range ~150 studs)
                 local mapX = math.clamp(relPos.X / 150 * 50, -50, 50)
                 local mapZ = math.clamp(relPos.Z / 150 * 50, -50, 50)
 
@@ -493,32 +565,47 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- Aktualisiere die HUD-Anzeige, sobald die GUI getoggelt wird
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == WaterClient.ToggleKey then
+        WaterClient:UpdateActiveHUD()
+    end
+end)
+
 -- =================================================================
--- 5. SETTINGS WINDOW SETUP
+-- 6. SETTINGS WINDOW CONTENT
 -- =================================================================
 local SettingsTitle = Instance.new("TextLabel")
-SettingsTitle.Size = UDim2.new(1, 0, 0, 30)
+SettingsTitle.Size = UDim2.new(1, -40, 0, 30)
+SettingsTitle.Position = UDim2.new(0, 12, 0, 5)
 SettingsTitle.Text = "Water Client Settings"
 SettingsTitle.Font = Enum.Font.GothamBold
 SettingsTitle.TextSize = 14
 SettingsTitle.TextColor3 = WaterClient.AccentColor
+SettingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+SettingsTitle.BackgroundTransparency = 1
 SettingsTitle.Parent = SettingsFrame
+
+local SettingsContainer = Instance.new("Frame")
+SettingsContainer.Size = UDim2.new(1, -20, 1, -45)
+SettingsContainer.Position = UDim2.new(0, 10, 0, 38)
+SettingsContainer.BackgroundTransparency = 1
+SettingsContainer.Parent = SettingsFrame
 
 local SettingsList = Instance.new("UIListLayout")
 SettingsList.Padding = UDim.new(0, 6)
-SettingsList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-SettingsList.Parent = SettingsFrame
+SettingsList.Parent = SettingsContainer
 
 -- Blur Toggle
 local BlurBtn = Instance.new("TextButton")
-BlurBtn.Size = UDim2.new(0.9, 0, 0, 32)
+BlurBtn.Size = UDim2.new(1, 0, 0, 32)
 BlurBtn.Text = "GUI Blur Effect: ON"
 BlurBtn.Font = Enum.Font.Gotham
 BlurBtn.TextSize = 12
 BlurBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 BlurBtn.BackgroundColor3 = WaterClient.CardColor
-BlurBtn.Parent = SettingsFrame
-AddCorner(BlurBtn, 4)
+BlurBtn.Parent = SettingsContainer
+AddCorner(BlurBtn, 6)
 
 BlurBtn.MouseButton1Click:Connect(function()
     WaterClient.Blur.Enabled = not WaterClient.Blur.Enabled
@@ -527,14 +614,14 @@ end)
 
 -- Global Keybind Selector
 local ToggleKeyBtn = Instance.new("TextButton")
-ToggleKeyBtn.Size = UDim2.new(0.9, 0, 0, 32)
+ToggleKeyBtn.Size = UDim2.new(1, 0, 0, 32)
 ToggleKeyBtn.Text = "Menu Key: " .. WaterClient.ToggleKey.Name
 ToggleKeyBtn.Font = Enum.Font.Gotham
 ToggleKeyBtn.TextSize = 12
 ToggleKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleKeyBtn.BackgroundColor3 = WaterClient.CardColor
-ToggleKeyBtn.Parent = SettingsFrame
-AddCorner(ToggleKeyBtn, 4)
+ToggleKeyBtn.Parent = SettingsContainer
+AddCorner(ToggleKeyBtn, 6)
 
 ToggleKeyBtn.MouseButton1Click:Connect(function()
     ToggleKeyBtn.Text = "Press Key..."
