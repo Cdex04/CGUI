@@ -1,0 +1,245 @@
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
+
+local MeteorLib = {
+    Tabs = {},
+    Modules = {},
+    HUD = {},
+    Open = true,
+    ToggleKey = Enum.KeyCode.RightShift,
+    Blur = nil
+}
+
+-- 1. SCREEN GUI CREATION
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MeteorGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("CoreGui")
+
+-- Blur Effect Initialisieren
+local function SetupBlur()
+    local blur = Instance.new("BlurEffect")
+    blur.Size = 0
+    blur.Enabled = false
+    blur.Parent = Lighting
+    MeteorLib.Blur = blur
+end
+SetupBlur()
+
+-- GUI Toggle Handler (Rechts-Shift & Blur)
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == MeteorLib.ToggleKey then
+        MeteorLib.Open = not MeteorLib.Open
+        ScreenGui.Enabled = MeteorLib.Open
+        if MeteorLib.Blur then
+            MeteorLib.Blur.Enabled = MeteorLib.Open
+            MeteorLib.Blur.Size = MeteorLib.Open and 15 or 0
+        end
+    end
+end)
+
+-- 2. TAB CREATION (Automatisches Nebeneinander-Platzieren)
+function MeteorLib:CreateTab(name)
+    local tabCount = #MeteorLib.Tabs
+    local tabWidth = 160
+    local tabSpacing = 10
+    local xOffset = 20 + (tabCount * (tabWidth + tabSpacing))
+
+    local TabFrame = Instance.new("Frame")
+    TabFrame.Name = name .. "Tab"
+    TabFrame.Size = UDim2.new(0, tabWidth, 0, 30)
+    TabFrame.Position = UDim2.new(0, xOffset, 0, 50)
+    TabFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    TabFrame.Active = true
+    TabFrame.Draggable = true
+    TabFrame.Parent = ScreenGui
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 1, 0)
+    Title.Text = name
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.BackgroundTransparency = 1
+    Title.Parent = TabFrame
+
+    local Container = Instance.new("Frame")
+    Container.Name = "Container"
+    Container.Size = UDim2.new(1, 0, 0, 0)
+    Container.Position = UDim2.new(0, 0, 1, 0)
+    Container.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    Container.Parent = TabFrame
+
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.Parent = Container
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local tabData = {Frame = TabFrame, Container = Container, Modules = {}}
+    table.insert(MeteorLib.Tabs, tabData)
+
+    -- 3. MODULE CREATION (Mit Left-Click Toggle & Right-Click Settings)
+    function tabData:CreateModule(modName, callback)
+        local modData = {
+            Name = modName,
+            Enabled = false,
+            Mode = "Toggle", -- "Toggle" oder "Hold"
+            Keybind = nil,
+            Callback = callback or function() end
+        }
+
+        local ModButton = Instance.new("TextButton")
+        ModButton.Size = UDim2.new(1, 0, 0, 25)
+        ModButton.Text = modName
+        ModButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        ModButton.TextColor3 = Color3.fromRGB(180, 180, 180)
+        ModButton.Parent = Container
+
+        -- Automatisches Anpassen der Tab-Höhe
+        Container.Size = UDim2.new(1, 0, 0, UIListLayout.AbsoluteContentSize.Y)
+
+        local function ToggleModule()
+            modData.Enabled = not modData.Enabled
+            ModButton.TextColor3 = modData.Enabled and Color3.fromRGB(145, 61, 226) or Color3.fromRGB(180, 180, 180) -- Meteor Purple
+            modData.Callback(modData.Enabled)
+            MeteorLib:UpdateActiveHUD()
+        end
+
+        -- Klick-Logik (Links = Toggle, Rechts = Settings)
+        ModButton.MouseButton1Click:Connect(function()
+            if modData.Mode == "Toggle" then
+                ToggleModule()
+            end
+        end)
+
+        ModButton.MouseButton2Click:Connect(function()
+            MeteorLib:OpenSettingsMenu(modData, ModButton)
+        end)
+
+        -- Keybind Support
+        UserInputService.InputBegan:Connect(function(input, gpe)
+            if not gpe and modData.Keybind and input.KeyCode == modData.Keybind then
+                if modData.Mode == "Toggle" then
+                    ToggleModule()
+                elseif modData.Mode == "Hold" then
+                    modData.Enabled = true
+                    ModButton.TextColor3 = Color3.fromRGB(145, 61, 226)
+                    modData.Callback(true)
+                    MeteorLib:UpdateActiveHUD()
+                end
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input, gpe)
+            if modData.Mode == "Hold" and modData.Keybind and input.KeyCode == modData.Keybind then
+                modData.Enabled = false
+                ModButton.TextColor3 = Color3.fromRGB(180, 180, 180)
+                modData.Callback(false)
+                MeteorLib:UpdateActiveHUD()
+            end
+        end)
+
+        table.insert(MeteorLib.Modules, modData)
+        return modData
+    end
+
+    return tabData
+end
+
+-- 4. SETTINGS CONTEXT MENU (Keybind & Dropdown Mode)
+function MeteorLib:OpenSettingsMenu(modData, parentBtn)
+    if ScreenGui:FindFirstChild("SettingsMenu") then
+        ScreenGui.SettingsMenu:Destroy()
+    end
+
+    local Menu = Instance.new("Frame")
+    Menu.Name = "SettingsMenu"
+    Menu.Size = UDim2.new(0, 150, 0, 70)
+    Menu.Position = UDim2.new(0, parentBtn.AbsolutePosition.X + 160, 0, parentBtn.AbsolutePosition.Y)
+    Menu.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    Menu.BorderSizePixel = 1
+    Menu.Parent = ScreenGui
+
+    -- Keybind Selector
+    local KeyBtn = Instance.new("TextButton")
+    KeyBtn.Size = UDim2.new(1, 0, 0, 30)
+    KeyBtn.Text = "Keybind: " .. (modData.Keybind and modData.Keybind.Name or "None")
+    KeyBtn.Parent = Menu
+
+    KeyBtn.MouseButton1Click:Connect(function()
+        KeyBtn.Text = "Press key..."
+        local conn; conn = UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                modData.Keybind = input.KeyCode
+                KeyBtn.Text = "Keybind: " .. input.KeyCode.Name
+                conn:Disconnect()
+            end
+        end)
+    end)
+
+    -- Dropdown (Toggle / Hold)
+    local ModeBtn = Instance.new("TextButton")
+    ModeBtn.Size = UDim2.new(1, 0, 0, 30)
+    ModeBtn.Position = UDim2.new(0, 0, 0, 35)
+    ModeBtn.Text = "Mode: " .. modData.Mode
+    ModeBtn.Parent = Menu
+
+    ModeBtn.MouseButton1Click:Connect(function()
+        modData.Mode = (modData.Mode == "Toggle") and "Hold" or "Toggle"
+        ModeBtn.Text = "Mode: " .. modData.Mode
+    end)
+end
+
+-- 5. HUD OVERLAYS (FPS, Ping, Active Modules, Radar)
+local ActiveListFrame = Instance.new("Frame")
+ActiveListFrame.Size = UDim2.new(0, 150, 0, 300)
+ActiveListFrame.Position = UDim2.new(1, -160, 0, 20)
+ActiveListFrame.BackgroundTransparency = 1
+ActiveListFrame.Parent = ScreenGui
+
+local ActiveLayout = Instance.new("UIListLayout")
+ActiveLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+ActiveLayout.Parent = ActiveListFrame
+
+function MeteorLib:UpdateActiveHUD()
+    for _, child in pairs(ActiveListFrame:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
+    end
+
+    for _, mod in pairs(MeteorLib.Modules) do
+        if mod.Enabled then
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1, 0, 0, 20)
+            lbl.Text = mod.Name
+            lbl.TextColor3 = Color3.fromRGB(145, 61, 226)
+            lbl.TextXAlignment = Enum.TextXAlignment.Right
+            lbl.BackgroundTransparency = 1
+            lbl.Parent = ActiveListFrame
+        end
+    end
+end
+
+-- FPS & Ping Counter
+local StatsLabel = Instance.new("TextLabel")
+StatsLabel.Size = UDim2.new(0, 200, 0, 20)
+StatsLabel.Position = UDim2.new(0, 10, 1, -30)
+StatsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatsLabel.BackgroundTransparency = 1
+StatsLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatsLabel.Parent = ScreenGui
+
+local lastFpsUpdate = os.clock()
+local frameCount = 0
+
+RunService.RenderStepped:Connect(function()
+    frameCount = frameCount + 1
+    if os.clock() - lastFpsUpdate >= 1 then
+        local fps = frameCount
+        frameCount = 0
+        lastFpsUpdate = os.clock()
+        
+        local ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
+        StatsLabel.Text = string.format("FPS: %d | Ping: %dms", fps, ping)
+    end
+end)
+
+return MeteorLib
