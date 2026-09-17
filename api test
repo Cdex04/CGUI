@@ -306,6 +306,13 @@ local function CreateSettingsContainer(parentFrame, baseHeight)
         Expanded = false
     }, SettingsContainerClass)
 
+    -- Automatische Größenaktualisierung bei Inhaltsänderungen
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        if settingsObj.Expanded then
+            settingsObj:UpdateSize()
+        end
+    end)
+
     return settingsObj
 end
 
@@ -315,6 +322,14 @@ function SettingsContainerClass:UpdateSize()
 
     TweenService:Create(self.Container, TweenInfo.new(0.3), {Size = UDim2.new(1, -20, 0, targetSubHeight)}):Play()
     TweenService:Create(self.ParentFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, -10, 0, targetTotalHeight)}):Play()
+
+    -- Falls dieses Element selbst in einem übergeordneten SettingsContainer liegt, diesen ebenfalls updaten
+    if self.ParentFrame.Parent and self.ParentFrame.Parent:FindFirstChildOfClass("UIListLayout") then
+        local parentContainer = self.ParentFrame.Parent
+        if parentContainer:GetAttribute("IsSettingsContainer") then
+            parentContainer:EmitSizeUpdate()
+        end
+    end
 end
 
 function SettingsContainerClass:Toggle()
