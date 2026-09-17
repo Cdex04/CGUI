@@ -373,6 +373,10 @@ function Library:CreateTab(tabName)
     PageLayout.Padding = UDim.new(0, 8)
     PageLayout.Parent = Page
 
+    PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 15)
+    end)
+
     local TabButton = Instance.new("TextButton")
     TabButton.Text = tabName
     TabButton.Size = UDim2.new(1, -5, 0, 35)
@@ -1189,15 +1193,16 @@ function TabClass:AddDropdown(options, callback)
 end
 
 -- ===================================================
--- 12. KEYBIND
+-- 12. KEYBIND (FIXED: Clean Connection Handling)
 -- ===================================================
 function TabClass:AddKeybind(options, callback)
     options = options or {}
     local titleText = options.Title or "Keybind"
-    local defaultKey = options.Default or Enum.KeyCode.E
+    local currentKey = options.Default or Enum.KeyCode.E
 
-    local currentKey = defaultKey
     local listening = false
+    local listenConnection
+    local triggerConnection
 
     local bindFrame = Instance.new("Frame")
     bindFrame.Size = UDim2.new(1, -10, 0, 38)
@@ -1240,24 +1245,33 @@ function TabClass:AddKeybind(options, callback)
     bCorner.CornerRadius = UDim.new(0, 4)
     bCorner.Parent = bindBtn
 
+    local function setupTrigger()
+        if triggerConnection then triggerConnection:Disconnect() end
+        triggerConnection = UserInputService.InputBegan:Connect(function(input, gpe)
+            if not gpe and not listening and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == currentKey then
+                if callback then pcall(callback, currentKey) end
+            end
+        end)
+    end
+
     bindBtn.MouseButton1Click:Connect(function()
+        if listening then return end
         listening = true
         bindBtn.Text = "..."
         bindBtn.TextColor3 = Color3.fromRGB(255, 200, 0)
-    end)
 
-    UserInputService.InputBegan:Connect(function(input, gpe)
-        if listening then
+        listenConnection = UserInputService.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 currentKey = input.KeyCode
                 bindBtn.Text = currentKey.Name
                 bindBtn.TextColor3 = Color3.fromRGB(0, 187, 255)
                 listening = false
+                listenConnection:Disconnect()
+                setupTrigger()
             end
-        elseif not gpe and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == currentKey then
-            if callback then pcall(callback, currentKey) end
-        end
+        end)
     end)
-end
 
+    setupTrigger()
+end
 return Library
