@@ -1,6 +1,5 @@
 --[[
     CCClient UI-Library v2.1
-    Inklusive Fenster, SubTabs, Module, Einstellungen, RGB-Color Picker & Notification-System
 ]]
 
 local Players = game:GetService("Players")
@@ -27,13 +26,11 @@ screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
 
--- Blur-Effekt im Hintergrund
 local blurEffect = Instance.new("BlurEffect")
 blurEffect.Name = "CCClient_Blur"
 blurEffect.Size = 15
 blurEffect.Parent = Lighting
 
--- TopBar für Fenster-Toggles
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(0, 560, 0, 40)
 topBar.Position = UDim2.new(0.5, -280, 0, 20)
@@ -79,7 +76,7 @@ function Library.Notify(title, message, duration)
     notifFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
     notifFrame.BackgroundTransparency = 0.2
     notifFrame.BorderSizePixel = 0
-    notifFrame.Position = UDim2.new(1, 300, 0, 0) -- Startet außerhalb des Bildschirms rechts
+    notifFrame.Position = UDim2.new(1, 300, 0, 0)
     notifFrame.Parent = notifHolder
 
     Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 6)
@@ -112,12 +109,10 @@ function Library.Notify(title, message, duration)
     mLabel.Text = message
     mLabel.Parent = notifFrame
 
-    -- Einfliegen-Animation
     TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0)}):Play()
 
     task.spawn(function()
         task.wait(duration)
-        -- Ausblenden-Animation
         local tweenOut = TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1, 300, 0, 0), BackgroundTransparency = 1})
         tweenOut:Play()
         tweenOut.Completed:Wait()
