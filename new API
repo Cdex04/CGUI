@@ -18,6 +18,10 @@
 	local sub = btn:SubSettings("Test – Einstellungen")   -- Rechtsklick auf den Button
 	sub:AddToggle({ Name = "Extra", Callback = print })
 	Tab:AddTextBox({ Name = "Name", Placeholder = "Text...", Callback = function(text, enter) end })
+
+	CGui:SetTheme("Light")                                  -- Presets: Teal, Light, Midnight
+	CGui:SetTheme({ Accent = Color3.fromRGB(255, 80, 120) })  -- einzelne Farben aendern
+	CGui.Theme.Stroke = Color3.fromRGB(40, 40, 40)           -- direkt setzen geht auch
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -29,29 +33,157 @@ local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local CGui = { Version = "1.1.0" }
+local CGui = { Version = "1.2.0", _windows = {} }
 
-local Theme = {
-	LoadBg       = Color3.fromRGB(3, 9, 18),
-	Main         = Color3.fromRGB(8, 22, 26),
-	Topbar       = Color3.fromRGB(11, 30, 35),
-	Element      = Color3.fromRGB(14, 38, 43),
-	ElementHover = Color3.fromRGB(19, 50, 56),
-	Accent       = Color3.fromRGB(0, 168, 150),
-	Off          = Color3.fromRGB(28, 62, 66),
-	Text         = Color3.fromRGB(226, 245, 243),
-	SubText      = Color3.fromRGB(130, 172, 170),
-	Stroke       = Color3.fromRGB(22, 64, 68),
-	Error        = Color3.fromRGB(224, 92, 92),
+-- Theme-System: CGui.Theme / CGui:SetTheme(...) wirken live auf bestehende Fenster
+local Presets = {
+	Teal = {
+		Main = Color3.fromRGB(8, 22, 26), Topbar = Color3.fromRGB(11, 30, 35),
+		Element = Color3.fromRGB(14, 38, 43), ElementHover = Color3.fromRGB(19, 50, 56),
+		Stroke = Color3.fromRGB(22, 64, 68), Off = Color3.fromRGB(28, 62, 66),
+		Accent = Color3.fromRGB(0, 168, 150), AccentHover = Color3.fromRGB(0, 196, 175),
+		Text = Color3.fromRGB(226, 245, 243), SubText = Color3.fromRGB(130, 172, 170),
+		OnAccent = Color3.fromRGB(255, 255, 255), Error = Color3.fromRGB(224, 92, 92),
+		Overlay = Color3.fromRGB(4, 12, 14),
+		LoadBg = Color3.fromRGB(3, 9, 18), LoadBg2 = Color3.fromRGB(4, 20, 30),
+	},
+	Light = {
+		Main = Color3.fromRGB(244, 247, 247), Topbar = Color3.fromRGB(230, 237, 238),
+		Element = Color3.fromRGB(252, 254, 254), ElementHover = Color3.fromRGB(232, 243, 243),
+		Stroke = Color3.fromRGB(206, 220, 222), Off = Color3.fromRGB(200, 214, 216),
+		Accent = Color3.fromRGB(0, 150, 136), AccentHover = Color3.fromRGB(0, 176, 160),
+		Text = Color3.fromRGB(22, 38, 42), SubText = Color3.fromRGB(92, 118, 122),
+		OnAccent = Color3.fromRGB(255, 255, 255), Error = Color3.fromRGB(206, 60, 60),
+		Overlay = Color3.fromRGB(214, 224, 226),
+		LoadBg = Color3.fromRGB(236, 244, 245), LoadBg2 = Color3.fromRGB(220, 236, 238),
+	},
+	Midnight = {
+		Main = Color3.fromRGB(13, 14, 28), Topbar = Color3.fromRGB(18, 20, 38),
+		Element = Color3.fromRGB(24, 26, 50), ElementHover = Color3.fromRGB(32, 35, 66),
+		Stroke = Color3.fromRGB(40, 44, 84), Off = Color3.fromRGB(46, 50, 92),
+		Accent = Color3.fromRGB(124, 92, 255), AccentHover = Color3.fromRGB(150, 122, 255),
+		Text = Color3.fromRGB(232, 234, 250), SubText = Color3.fromRGB(140, 146, 190),
+		OnAccent = Color3.fromRGB(255, 255, 255), Error = Color3.fromRGB(240, 100, 110),
+		Overlay = Color3.fromRGB(6, 6, 14),
+		LoadBg = Color3.fromRGB(5, 6, 16), LoadBg2 = Color3.fromRGB(14, 12, 34),
+	},
 }
+CGui.Themes = Presets
+
+local ThemeStore, applied = {}, {}
+for k, v in pairs(Presets.Teal) do ThemeStore[k] = v; applied[k] = v end
+
+local Theme = setmetatable({}, {
+	__index = ThemeStore,
+	__newindex = function(_, k, v)       -- CGui.Theme.Accent = Color3... wird automatisch angewendet
+		ThemeStore[k] = v
+		CGui:_QueueApply()
+	end,
+})
 CGui.Theme = Theme
+
+local THEME_ORDER = { "Main", "Topbar", "Element", "ElementHover", "Stroke", "Off", "Accent", "AccentHover",
+	"Text", "SubText", "OnAccent", "Error", "Overlay", "LoadBg", "LoadBg2" }
+local COLOR_PROPS = {
+	Frame = { "BackgroundColor3" },
+	TextLabel = { "BackgroundColor3", "TextColor3" },
+	TextButton = { "BackgroundColor3", "TextColor3" },
+	TextBox = { "BackgroundColor3", "TextColor3", "PlaceholderColor3" },
+	ImageLabel = { "BackgroundColor3", "ImageColor3" },
+	ImageButton = { "BackgroundColor3", "ImageColor3" },
+	ScrollingFrame = { "BackgroundColor3", "ScrollBarImageColor3" },
+	UIStroke = { "Color" },
+}
+
+local function colorId(c)
+	return math.floor(c.R * 255 + 0.5) * 65536 + math.floor(c.G * 255 + 0.5) * 256 + math.floor(c.B * 255 + 0.5)
+end
+
+function CGui:_QueueApply()
+	if self._applyQueued then return end
+	self._applyQueued = true
+	task.defer(function() self:ApplyTheme() end)
+end
+
+-- Faerbt alle bestehenden Fenster von der alten auf die neue Palette um
+function CGui:ApplyTheme()
+	self._applyQueued = false
+	local keys = {}
+	for _, k in ipairs(THEME_ORDER) do keys[#keys + 1] = k end
+	for k in pairs(ThemeStore) do
+		if not table.find(keys, k) then keys[#keys + 1] = k end
+	end
+	local map, changed, clash = {}, false, false
+	for _, k in ipairs(keys) do
+		local old, new = applied[k], ThemeStore[k]
+		if typeof(old) == "Color3" and typeof(new) == "Color3" then
+			if colorId(old) ~= colorId(new) then changed = true end
+			local id = colorId(old)
+			if map[id] == nil then
+				map[id] = new
+			elseif colorId(map[id]) ~= colorId(new) then
+				clash = true
+			end
+		end
+	end
+	if clash then
+		warn("[CGui] Theme: Mehrere Keys hatten dieselbe Farbe - bitte pro Key unterschiedliche Farben nutzen, sonst koennen Elemente falsch eingefaerbt werden.")
+	end
+	if changed then
+		for i = #self._windows, 1, -1 do
+			local win = self._windows[i]
+			if not win.Gui or not win.Gui.Parent then
+				table.remove(self._windows, i)
+			else
+				for _, inst in ipairs(win.Gui:GetDescendants()) do
+					local props = COLOR_PROPS[inst.ClassName]
+					if props and not inst:GetAttribute("NoTheme") then
+						for _, p in ipairs(props) do
+							local cur = inst[p]
+							local nv = map[colorId(cur)]
+							if nv and colorId(nv) ~= colorId(cur) then inst[p] = nv end
+						end
+					end
+				end
+			end
+		end
+	end
+	for k, v in pairs(ThemeStore) do applied[k] = v end
+end
+
+-- Name eines Presets ("Teal", "Light", "Midnight") oder eine (auch teilweise) Tabelle
+function CGui:SetTheme(t)
+	if type(t) == "string" then
+		local preset = Presets[t]
+		if not preset then warn("[CGui] Unbekanntes Theme: " .. t); return end
+		t = preset
+	end
+	for k, v in pairs(t) do ThemeStore[k] = v end
+	self:ApplyTheme()
+end
+
+function CGui:GetTheme()
+	local c = {}
+	for k, v in pairs(ThemeStore) do c[k] = v end
+	return c
+end
+
+-- Eigenes Preset registrieren (fehlende Keys kommen aus Teal)
+function CGui:RegisterTheme(name, t)
+	local full = {}
+	for k, v in pairs(Presets.Teal) do full[k] = v end
+	for k, v in pairs(t) do full[k] = v end
+	Presets[name] = full
+end
 
 --------------------------------------------------------------------
 -- Helfer
 --------------------------------------------------------------------
 local function new(class, props, children)
 	local inst = Instance.new(class)
-	for k, v in pairs(props or {}) do inst[k] = v end
+	for k, v in pairs(props or {}) do
+		if k == "NoTheme" then inst:SetAttribute("NoTheme", v) else inst[k] = v end
+	end
 	for _, c in ipairs(children or {}) do c.Parent = inst end
 	return inst
 end
@@ -443,11 +575,14 @@ function Window:Toggle(state)
 	end
 end
 
+function Window:SetTheme(t) CGui:SetTheme(t) end
+
 function Window:SetToggleKey(key) self.ToggleKey = key end
 
 function Window:Destroy()
 	self.Destroyed = true
 	for _, c in ipairs(self._conns) do pcall(function() c:Disconnect() end) end
+	for i = #CGui._windows, 1, -1 do if CGui._windows[i] == self then table.remove(CGui._windows, i) end end
 	if self.Gui then self.Gui:Destroy() end
 end
 
@@ -613,7 +748,7 @@ local function finalize(container, el, b, opts)
 	el.LockMode = opts.LockMode or "Gray"
 
 	local overlay = new("Frame", {
-		BackgroundColor3 = Color3.fromRGB(4, 12, 14), BackgroundTransparency = 0.35, BorderSizePixel = 0,
+		BackgroundColor3 = Theme.Overlay, BackgroundTransparency = 0.35, BorderSizePixel = 0,
 		Size = UDim2.fromScale(1, 1), Active = true, ZIndex = 20, Visible = false, Parent = b.Frame,
 	}, { corner(8) })
 
@@ -693,7 +828,7 @@ function Container:AddToggle(opts)
 	}, { corner(10) })
 	local knob = new("Frame", {
 		Size = UDim2.fromOffset(14, 14), Position = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3),
-		BackgroundColor3 = Color3.new(1, 1, 1), Parent = track,
+		BackgroundColor3 = Theme.OnAccent, Parent = track,
 	}, { corner(7) })
 
 	local function render()
@@ -751,7 +886,7 @@ function Container:AddSlider(opts)
 		BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1), Parent = track,
 	}, { corner(3) })
 	local knob = new("Frame", {
-		BackgroundColor3 = Color3.new(1, 1, 1), AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14),
+		BackgroundColor3 = Theme.OnAccent, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14),
 		Position = UDim2.fromScale(0, 0.5), ZIndex = 2, Parent = track,
 	}, { corner(9) })
 	local area = new("TextButton", {
@@ -848,7 +983,7 @@ function Container:AddDropdown(opts)
 	local function paint()
 		for o, btn in pairs(buttons) do
 			local on = selected[o]
-			tween(btn, 0.2, { BackgroundColor3 = on and Theme.Accent or Theme.Off, TextColor3 = on and Color3.new(1, 1, 1) or Theme.Text })
+			tween(btn, 0.2, { BackgroundColor3 = on and Theme.Accent or Theme.Off, TextColor3 = on and Theme.OnAccent or Theme.Text })
 		end
 		updateText()
 	end
@@ -954,7 +1089,7 @@ function Container:AddColorPicker(opts)
 	local el = { Kind = "ColorPicker" }
 	local open = false
 
-	local committed = opts.Default or Color3.fromRGB(0, 168, 150)
+	local committed = opts.Default or Theme.Accent
 	local work = { r = 0, g = 0, b = 0, br = 100 }
 
 	local function finalColor(w)
@@ -966,7 +1101,7 @@ function Container:AddColorPicker(opts)
 	end
 
 	local swatch = new("Frame", {
-		BackgroundColor3 = committed, Size = UDim2.fromOffset(40, 20), Position = UDim2.new(1, -52, 0.5, -10), Parent = b.Header,
+		BackgroundColor3 = committed, NoTheme = true, Size = UDim2.fromOffset(40, 20), Position = UDim2.new(1, -52, 0.5, -10), Parent = b.Header,
 	}, { corner(6), stroke(Theme.Text, 1, 0.7) })
 
 	local sliders = {}
@@ -988,7 +1123,7 @@ function Container:AddColorPicker(opts)
 		}, { corner(3) })
 		local fill = new("Frame", { BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1), Parent = track }, { corner(3) })
 		local knob = new("Frame", {
-			BackgroundColor3 = Color3.new(1, 1, 1), AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14),
+			BackgroundColor3 = Theme.OnAccent, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14),
 			Position = UDim2.fromScale(0, 0.5), ZIndex = 2, Parent = track,
 		}, { corner(9) })
 		local area = new("TextButton", {
@@ -1038,7 +1173,7 @@ function Container:AddColorPicker(opts)
 	}, { corner(6) })
 	local done = new("TextButton", {
 		BackgroundColor3 = Theme.Accent, AutoButtonColor = false, Text = "Fertig", Font = Enum.Font.GothamMedium,
-		TextSize = 13, TextColor3 = Color3.new(1, 1, 1), Position = UDim2.new(0.5, 4, 0, btnY), Size = UDim2.new(0.5, -14, 0, 28), Parent = b.Frame,
+		TextSize = 13, TextColor3 = Theme.OnAccent, Position = UDim2.new(0.5, 4, 0, btnY), Size = UDim2.new(0.5, -14, 0, 28), Parent = b.Frame,
 	}, { corner(6) })
 	cancel.MouseEnter:Connect(function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Error }) end)
 	cancel.MouseLeave:Connect(function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Off }) end)
@@ -1046,7 +1181,7 @@ function Container:AddColorPicker(opts)
 		function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Error }) end,
 		function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Off }) end)
 	selectFX(win, done,
-		function() tween(done, 0.15, { BackgroundColor3 = Color3.fromRGB(0, 196, 175) }) end,
+		function() tween(done, 0.15, { BackgroundColor3 = Theme.AccentHover }) end,
 		function() tween(done, 0.15, { BackgroundColor3 = Theme.Accent }) end)
 	local function setBodySel(v)
 		cancel.Selectable = v
@@ -1387,10 +1522,10 @@ function Window:_RunLoading(opts)
 	})
 	local scale
 	new("Frame", {   -- leichter Verlauf
-		BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Parent = scr,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255), NoTheme = true, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Parent = scr,
 	}, { new("UIGradient", {
 		Rotation = 90,
-		Color = ColorSequence.new(Color3.fromRGB(2, 7, 15), Color3.fromRGB(4, 20, 30)),
+		Color = ColorSequence.new(Theme.LoadBg, Theme.LoadBg2),
 	}) })
 
 	local box = new("Frame", {
@@ -1523,9 +1658,9 @@ function Window:_RunKeySystem(ks)
 	})
 	local submit = new("TextButton", {
 		BackgroundColor3 = Theme.Accent, AutoButtonColor = false, Text = "Bestätigen", Font = Enum.Font.GothamBold,
-		TextSize = 14, TextColor3 = Color3.new(1, 1, 1), Position = UDim2.fromOffset(20, 148), Size = UDim2.new(1, -40, 0, 38), Parent = panel,
+		TextSize = 14, TextColor3 = Theme.OnAccent, Position = UDim2.fromOffset(20, 148), Size = UDim2.new(1, -40, 0, 38), Parent = panel,
 	}, { corner(8) })
-	submit.MouseEnter:Connect(function() tween(submit, 0.15, { BackgroundColor3 = Color3.fromRGB(0, 196, 175) }) end)
+	submit.MouseEnter:Connect(function() tween(submit, 0.15, { BackgroundColor3 = Theme.AccentHover }) end)
 	submit.MouseLeave:Connect(function() tween(submit, 0.15, { BackgroundColor3 = Theme.Accent }) end)
 
 	if ks.GetKeyLink then
@@ -1597,6 +1732,7 @@ end
 -- Window erstellen
 --------------------------------------------------------------------
 function CGui:CreateWindow(opts)
+	if type(opts) == "table" and opts.Theme then CGui:SetTheme(opts.Theme) end
 	opts = opts or {}
 	local win = setmetatable({
 		Name = opts.Name or "Settings",
@@ -1625,6 +1761,7 @@ function CGui:CreateWindow(opts)
 		if not gui.Parent then gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
 	end
 	win.Gui = gui
+	table.insert(CGui._windows, win)
 	win.NoSel = new("Frame", { Name = "NoSel", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
 
 	-- Hauptfenster
