@@ -17,6 +17,7 @@
 	local btn = Tab:AddButton({ Name = "Test", Description = "Beschreibung", Callback = function() end })
 	local sub = btn:SubSettings("Test – Einstellungen")   -- Rechtsklick auf den Button
 	sub:AddToggle({ Name = "Extra", Callback = print })
+	Tab:AddTextBox({ Name = "Name", Placeholder = "Text...", Callback = function(text, enter) end })
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -25,8 +26,10 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local TextService = game:GetService("TextService")
+local GuiService = game:GetService("GuiService")
+local ContextActionService = game:GetService("ContextActionService")
 
-local CGui = { Version = "1.0.0" }
+local CGui = { Version = "1.1.0" }
 
 local Theme = {
 	LoadBg       = Color3.fromRGB(3, 9, 18),
@@ -95,6 +98,62 @@ local function isMove(input)
 		or input.UserInputType == Enum.UserInputType.Touch
 end
 
+local function isGamepadActive()
+	return UIS:GetLastInputType().Name:find("Gamepad") ~= nil
+end
+
+-- Fade ueber alle Transparenzen (statt CanvasGroup -> bleibt gestochen scharf)
+local FADE_PROPS = {
+	Frame = { "BackgroundTransparency" },
+	TextLabel = { "BackgroundTransparency", "TextTransparency" },
+	TextButton = { "BackgroundTransparency", "TextTransparency" },
+	TextBox = { "BackgroundTransparency", "TextTransparency" },
+	ImageLabel = { "BackgroundTransparency", "ImageTransparency" },
+	ImageButton = { "BackgroundTransparency", "ImageTransparency" },
+	ScrollingFrame = { "BackgroundTransparency", "ScrollBarImageTransparency" },
+	UIStroke = { "Transparency" },
+}
+
+local function fadeCapture(root)
+	local snap = {}
+	local function add(inst)
+		local props = FADE_PROPS[inst.ClassName]
+		if props then
+			local rec = {}
+			for _, p in ipairs(props) do rec[p] = inst[p] end
+			snap[inst] = rec
+		end
+	end
+	add(root)
+	for _, d in ipairs(root:GetDescendants()) do add(d) end
+	return snap
+end
+
+local function fadeSet(snap, alpha)   -- sofort; alpha 1 = unsichtbar, 0 = Originalwerte
+	for inst, rec in pairs(snap) do
+		if inst.Parent then
+			for p, v in pairs(rec) do inst[p] = v + (1 - v) * alpha end
+		end
+	end
+end
+
+local function fadeTween(snap, t, alpha)
+	for inst, rec in pairs(snap) do
+		if inst.Parent then
+			local goal = {}
+			for p, v in pairs(rec) do goal[p] = v + (1 - v) * alpha end
+			tween(inst, t, goal, Enum.EasingStyle.Quad)
+		end
+	end
+end
+
+-- Gamepad: eigene Auswahl-Hervorhebung statt des Standard-Rahmens
+local function selectFX(win, btn, onGain, onLost)
+	btn.SelectionImageObject = win.NoSel
+	btn.SelectionGained:Connect(function() safe(onGain) end)
+	btn.SelectionLost:Connect(function() safe(onLost) end)
+end
+
 -- Icons: rbxassetid-Strings / Zahlen direkt, Lucide-Namen über einen Provider.
 -- CGui:SetIconProvider(function(name) return "rbxassetid://123" -- oder {Image=, ImageRectSize=, ImageRectOffset=} end)
 function CGui:SetIconProvider(fn) CGui.IconProvider = fn end
@@ -154,6 +213,16 @@ end
 --------------------------------------------------------------------
 -- Klassen
 --------------------------------------------------------------------
+-- Slider per Gamepad: A = Bearbeiten, D-Pad links/rechts = Wert aendern, A/B = fertig
+local function padSlider(win, area, knob, onStep)
+	area.Activated:Connect(function()
+		if isGamepadActive() then win:_PadEdit(area, knob, onStep) end
+	end)
+	selectFX(win, area,
+		function() tween(knob, 0.15, { Size = UDim2.fromOffset(18, 18) }) end,
+		function() tween(knob, 0.15, { Size = UDim2.fromOffset(14, 14) }) end)
+end
+
 local Window = {}; Window.__index = Window
 local Container = {}; Container.__index = Container            -- gemeinsame Element-Methoden
 local Tab = setmetatable({}, { __index = Container }); Tab.__index = Tab
@@ -168,8 +237,66 @@ end
 --------------------------------------------------------------------
 -- Tooltip
 --------------------------------------------------------------------
-function Window:_ShowTip(text)
+function Window:_PadEdit(area, knob, onStep)
+	if self._editing then return end
+	if os.clock() - (self._editEnd or 0) < 0.3 then return end
+	self._editing = true
+	local held = 0
+	local lostConn
+	local function stop()
+		if not self._editing then return end
+		self._editing = false
+		self._editEnd = os.clock()
+		self._stopEdit = nil
+		held = held + 1
+		ContextActionService:UnbindAction("CGuiEdit")
+		if lostConn then lostConn:Disconnect() end
+	end
+	self._stopEdit = stop
+	lostConn = area.SelectionLost:Connect(stop)
+	ContextActionService:BindActionAtPriority("CGuiEdit", function(_, state, input)
+		local k = input.KeyCode
+		local isDir = (k == Enum.KeyCode.DPadLeft or k == Enum.KeyCode.DPadRight)
+		if state == Enum.UserInputState.Begin then
+			if k == Enum.KeyCode.ButtonA or k == Enum.KeyCode.ButtonB then
+				stop()
+			elseif isDir then
+				local dir = (k == Enum.KeyCode.DPadLeft) and -1 or 1
+				held = held + 1
+				local my = held
+				onStep(dir)
+				task.spawn(function()
+					task.wait(0.35)
+					while held == my and self._editing do
+						onStep(dir)
+						task.wait(0.06)
+					end
+				end)
+			end
+		elseif state == Enum.UserInputState.End and isDir then
+			held = held + 1
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value,
+		Enum.KeyCode.ButtonA, Enum.KeyCode.ButtonB, Enum.KeyCode.DPadLeft, Enum.KeyCode.DPadRight)
+end
+
+-- Tabs per L1/R1 wechseln
+function Window:_StepTab(dir)
+	local n = #self.Tabs
+	if n < 2 then return end
+	local idx = 1
+	for i, t in ipairs(self.Tabs) do if t == self.CurrentTab then idx = i end end
+	for _ = 1, n do
+		idx = ((idx - 1 + dir) % n) + 1
+		local t = self.Tabs[idx]
+		if not t.Locked then self:_SelectTab(t); return end
+	end
+end
+
+function Window:_ShowTip(text, anchor)
 	if not text or text == "" then return end
+	self._tipAnchor = anchor
 	local tip = self.Tip
 	tip.Text = text
 	tip.BackgroundTransparency = 1
@@ -180,6 +307,7 @@ end
 
 function Window:_HideTip()
 	self.Tip.Visible = false
+	self._tipAnchor = nil
 end
 
 --------------------------------------------------------------------
@@ -273,19 +401,44 @@ end
 function Window:Toggle(state)
 	if not self.Ready then return end
 	if state == nil then state = not self.Visible end
+	if state == self.Visible then return end
 	self.Visible = state
+	self._fade = (self._fade or 0) + 1
+	local token = self._fade
 	local main, scale = self.Main, self.Scale
 	self:_HideTip()
 	if state then
+		if self._snap then fadeSet(self._snap, 0); self._snap = nil end
+		local snap = fadeCapture(main)
+		self._rest = snap
+		self._openedAt = os.clock()
+		fadeSet(snap, 1)
 		main.Visible = true
 		scale.Scale = 0.9
-		main.GroupTransparency = 1
 		tween(scale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
-		tween(main, 0.35, { GroupTransparency = 0 })
+		fadeTween(snap, 0.35, 0)
+		if isGamepadActive() then
+			task.delay(0.45, function()
+				if self.Visible and self._fade == token and self.CurrentTab then
+					GuiService.SelectedObject = self.CurrentTab.Button
+				end
+			end)
+		end
 	else
+		if self._stopEdit then self._stopEdit() end
+		local sel = GuiService.SelectedObject
+		if sel and sel:IsDescendantOf(main) then GuiService.SelectedObject = nil end
+		if self._rest and os.clock() - (self._openedAt or 0) < 0.4 then fadeSet(self._rest, 0) end
+		local snap = fadeCapture(main)
+		self._snap = snap
 		tween(scale, 0.3, { Scale = 0.92 })
-		tween(main, 0.3, { GroupTransparency = 1 }).Completed:Connect(function()
-			if not self.Visible then main.Visible = false end
+		fadeTween(snap, 0.3, 1)
+		task.delay(0.33, function()
+			if self._fade == token then
+				fadeSet(snap, 0)
+				self._snap = nil
+				main.Visible = false
+			end
 		end)
 	end
 end
@@ -309,20 +462,29 @@ end
 --------------------------------------------------------------------
 -- Sub-Settings
 --------------------------------------------------------------------
-function Window:_OpenSub(panel)
-	if self._openSub and self._openSub ~= panel then self:_CloseSub() end
+function Window:_OpenSub(panel, from, first)
+	if self._openSub and self._openSub ~= panel then self:_CloseSub(true) end
 	self._openSub = panel
+	self._subFrom = from
 	panel.Visible = true
 	tween(panel, 0.4, { Position = UDim2.new(0.1, 0, 0, 0) })
+	if first and isGamepadActive() then
+		task.delay(0.15, function()
+			if self._openSub == panel then GuiService.SelectedObject = first end
+		end)
+	end
 end
 
-function Window:_CloseSub()
+function Window:_CloseSub(noRestore)
 	local panel = self._openSub
 	if not panel then return end
 	self._openSub = nil
 	tween(panel, 0.35, { Position = UDim2.new(1, 0, 0, 0) }).Completed:Connect(function()
 		if self._openSub ~= panel then panel.Visible = false end
 	end)
+	if not noRestore and self._subFrom and isGamepadActive() then
+		GuiService.SelectedObject = self._subFrom
+	end
 end
 
 local function attachSub(container, el, b)
@@ -332,7 +494,7 @@ local function attachSub(container, el, b)
 		if self._sub then return self._sub end
 		local panel = new("Frame", {
 			BackgroundColor3 = Theme.Main, BorderSizePixel = 0, ZIndex = 30, Visible = false,
-			Size = UDim2.new(0.9, 0, 1, 0), Position = UDim2.new(1, 0, 0, 0), Parent = win.Body,
+			Size = UDim2.new(0.9, -6, 1, -6), Position = UDim2.new(1, 0, 0, 0), Parent = win.Body,
 		}, { corner(10), stroke(Theme.Accent, 1, 0.5) })
 		local head = new("Frame", {
 			BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 38), Parent = panel,
@@ -344,7 +506,10 @@ local function attachSub(container, el, b)
 		}, { corner(6) })
 		back.MouseEnter:Connect(function() tween(back, 0.15, { BackgroundColor3 = Theme.Accent }) end)
 		back.MouseLeave:Connect(function() tween(back, 0.15, { BackgroundColor3 = Theme.Element }) end)
-		back.MouseButton1Click:Connect(function() win:_CloseSub() end)
+		back.Activated:Connect(function() win:_CloseSub() end)
+		selectFX(win, back,
+			function() tween(back, 0.15, { BackgroundColor3 = Theme.Accent }) end,
+			function() tween(back, 0.15, { BackgroundColor3 = Theme.Element }) end)
 		new("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(88, 0), Size = UDim2.new(1, -96, 1, 0),
 			Text = title or self.Name or "Settings", Font = Enum.Font.GothamBold, TextSize = 15,
@@ -359,8 +524,10 @@ local function attachSub(container, el, b)
 		}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 6) })
 		local sub = setmetatable({ Window = win, Page = page, Panel = panel, IsSub = true }, SubPage)
 		self._sub = sub
+		win._subHits = win._subHits or {}
+		win._subHits[b.Hit] = function() if not self.Locked then win:_OpenSub(panel, b.Hit, back) end end
 		b.Hit.MouseButton2Click:Connect(function()
-			if not self.Locked then win:_OpenSub(panel) end
+			if not self.Locked then win:_OpenSub(panel, b.Hit, back) end
 		end)
 		return sub
 	end
@@ -381,6 +548,7 @@ local function buildBase(container, opts, extraH, rightW)
 		BackgroundColor3 = Theme.Element, BorderSizePixel = 0, ClipsDescendants = true,
 		Size = UDim2.new(1, -6, 0, headH + (extraH or 0)), Parent = container.Page,
 	}, { corner(8), stroke() })
+	local fstroke = frame:FindFirstChildOfClass("UIStroke")
 	local header = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, headH), Parent = frame })
 	local hit = new("TextButton", {
 		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), Parent = header,
@@ -411,6 +579,16 @@ local function buildBase(container, opts, extraH, rightW)
 		descLabel.BackgroundTransparency = 1
 		descLabel.TextTransparency = 0.15
 	end
+
+	selectFX(win, hit, function()
+		tween(frame, 0.15, { BackgroundColor3 = Theme.ElementHover })
+		tween(fstroke, 0.15, { Color = Theme.Accent })
+		if hasDesc and not below then win:_ShowTip(desc, frame) end
+	end, function()
+		tween(frame, 0.15, { BackgroundColor3 = Theme.Element })
+		tween(fstroke, 0.15, { Color = Theme.Stroke })
+		win:_HideTip()
+	end)
 
 	hit.MouseEnter:Connect(function()
 		tween(frame, 0.15, { BackgroundColor3 = Theme.ElementHover })
@@ -443,6 +621,8 @@ local function finalize(container, el, b, opts)
 		mode = mode or self.LockMode or "Gray"
 		self.Locked = state and true or false
 		self.LockMode = mode
+		b.Hit.Selectable = not self.Locked
+		if self._onLock then self._onLock(self.Locked) end
 		if self.Locked then
 			if self.Close then self:Close() end
 			if mode == "Hide" then
@@ -485,7 +665,7 @@ function Container:AddButton(opts)
 	local el = { Kind = "Button" }
 
 	function el:Fire() safe(opts.Callback) end
-	b.Hit.MouseButton1Click:Connect(function()
+	b.Hit.Activated:Connect(function()
 		if el.Locked then return end
 		tween(b.Frame, 0.08, { BackgroundColor3 = Theme.Accent })
 		task.delay(0.12, function() tween(b.Frame, 0.3, { BackgroundColor3 = Theme.ElementHover }) end)
@@ -529,7 +709,7 @@ function Container:AddToggle(opts)
 	end
 	function el:Toggle(silent) self:Set(not state, silent) end
 
-	b.Hit.MouseButton1Click:Connect(function()
+	b.Hit.Activated:Connect(function()
 		if not el.Locked then el:Set(not state) end
 	end)
 
@@ -586,6 +766,11 @@ function Container:AddSlider(opts)
 		valLabel.Text = tostring(value) .. (opts.Suffix or "")
 	end
 
+	padSlider(win, area, knob, function(dir)
+		if not el.Locked then el:Set(value + dir * inc) end
+	end)
+	el._onLock = function(l) area.Selectable = not l end
+
 	function el:Get() return value end
 	function el:Set(v, silent)
 		local nv = snap(tonumber(v) or value)
@@ -611,6 +796,7 @@ end
 function Container:AddDropdown(opts)
 	opts = opts or {}
 	local multi = opts.Multi and true or false
+	local win = self.Window
 	local options = opts.Options or {}
 	local b = buildBase(self, opts, 0, 190)
 	local el = { Kind = "Dropdown" }
@@ -679,9 +865,10 @@ function Container:AddDropdown(opts)
 		for i, o in ipairs(options) do
 			local btn = new("TextButton", {
 				BackgroundColor3 = Theme.Off, AutoButtonColor = false, Text = tostring(o), Font = Enum.Font.Gotham,
-				TextSize = 13, TextColor3 = Theme.Text, Size = UDim2.new(1, -4, 0, 30), LayoutOrder = i, Parent = scroll,
+				TextSize = 13, TextColor3 = Theme.Text, Size = UDim2.new(1, -4, 0, 30), LayoutOrder = i, TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd, Parent = scroll,
 			}, { corner(6) })
-			btn.MouseButton1Click:Connect(function()
+			btn.Activated:Connect(function()
 				if el.Locked then return end
 				if multi then
 					selected[o] = (not selected[o]) or nil
@@ -692,6 +879,16 @@ function Container:AddDropdown(opts)
 				fire()
 				if not multi then el:Close() end
 			end)
+			padding(10, 0, 10, 0).Parent = btn
+			btn.MouseEnter:Connect(function()   -- voller Name als Tooltip, falls abgeschnitten
+				local w = TextService:GetTextSize(tostring(o), 13, Enum.Font.Gotham, Vector2.new(10000, 100)).X
+				if w > btn.AbsoluteSize.X - 20 then win:_ShowTip(tostring(o)) end
+			end)
+			btn.MouseLeave:Connect(function() win:_HideTip() end)
+			selectFX(win, btn,
+				function() tween(btn, 0.15, { BackgroundTransparency = 0.35 }) end,
+				function() tween(btn, 0.15, { BackgroundTransparency = 0 }) end)
+			btn.Selectable = open
 			buttons[o] = btn
 		end
 		paint()
@@ -700,12 +897,14 @@ function Container:AddDropdown(opts)
 	function el:Open()
 		if open or self.Locked then return end
 		open = true
+		for _, bt in pairs(buttons) do bt.Selectable = true end
 		tween(b.Frame, 0.35, { Size = UDim2.new(1, -6, 0, b.HeadH + bodyH + 10) })
 		tween(arrow, 0.3, { Rotation = 180 })
 	end
 	function el:Close()
 		if not open then return end
 		open = false
+		for _, bt in pairs(buttons) do bt.Selectable = false end
 		tween(b.Frame, 0.3, { Size = UDim2.new(1, -6, 0, b.HeadH) })
 		tween(arrow, 0.3, { Rotation = 0 })
 	end
@@ -732,7 +931,7 @@ function Container:AddDropdown(opts)
 		if open then tween(b.Frame, 0.3, { Size = UDim2.new(1, -6, 0, b.HeadH + bodyH + 10) }) end
 	end
 
-	b.Hit.MouseButton1Click:Connect(function()
+	b.Hit.Activated:Connect(function()
 		if el.Locked then return end
 		if open then el:Close() else el:Open() end
 	end)
@@ -771,6 +970,7 @@ function Container:AddColorPicker(opts)
 	}, { corner(6), stroke(Theme.Text, 1, 0.7) })
 
 	local sliders = {}
+	local areas = {}
 	local function makeRow(y, label, min, max, key, suffix)
 		local row = new("Frame", {
 			BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, b.HeadH + 4 + y), Size = UDim2.new(1, -20, 0, 24), Parent = b.Frame,
@@ -808,6 +1008,15 @@ function Container:AddColorPicker(opts)
 			swatch.BackgroundColor3 = finalColor(work)
 			safe(opts.Changed, finalColor(work))
 		end)
+		padSlider(win, area, knob, function(dir)
+			if not open then return end
+			work[key] = math.clamp(work[key] + dir * math.max(1, math.floor((max - min) / 50)), min, max)
+			obj.render()
+			swatch.BackgroundColor3 = finalColor(work)
+			safe(opts.Changed, finalColor(work))
+		end)
+		area.Selectable = false
+		table.insert(areas, area)
 		sliders[key] = obj
 	end
 
@@ -833,17 +1042,36 @@ function Container:AddColorPicker(opts)
 	}, { corner(6) })
 	cancel.MouseEnter:Connect(function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Error }) end)
 	cancel.MouseLeave:Connect(function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Off }) end)
+	selectFX(win, cancel,
+		function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Error }) end,
+		function() tween(cancel, 0.15, { BackgroundColor3 = Theme.Off }) end)
+	selectFX(win, done,
+		function() tween(done, 0.15, { BackgroundColor3 = Color3.fromRGB(0, 196, 175) }) end,
+		function() tween(done, 0.15, { BackgroundColor3 = Theme.Accent }) end)
+	local function setBodySel(v)
+		cancel.Selectable = v
+		done.Selectable = v
+		for _, a in ipairs(areas) do a.Selectable = v end
+	end
+	setBodySel(false)
 
 	function el:Open()
 		if open or self.Locked then return end
 		open = true
 		loadWork(committed)
+		setBodySel(true)
 		tween(b.Frame, 0.35, { Size = UDim2.new(1, -6, 0, b.HeadH + bodyH) })
 	end
 	function el:Close()
 		if not open then return end
 		open = false
+		setBodySel(false)
 		tween(b.Frame, 0.3, { Size = UDim2.new(1, -6, 0, b.HeadH) })
+	end
+
+	function el:Cancel()
+		tween(swatch, 0.2, { BackgroundColor3 = committed })
+		self:Close()
 	end
 
 	function el:Get() return committed end
@@ -854,19 +1082,19 @@ function Container:AddColorPicker(opts)
 		if not silent then safe(opts.Callback, c) end
 	end
 
-	cancel.MouseButton1Click:Connect(function()
+	cancel.Activated:Connect(function()
 		tween(swatch, 0.2, { BackgroundColor3 = committed })
 		el:Close()
 	end)
-	done.MouseButton1Click:Connect(function()
+	done.Activated:Connect(function()
 		committed = finalColor(work)
 		tween(swatch, 0.2, { BackgroundColor3 = committed })
 		el:Close()
 		safe(opts.Callback, committed)
 	end)
-	b.Hit.MouseButton1Click:Connect(function()
+	b.Hit.Activated:Connect(function()
 		if el.Locked then return end
-		if open then cancel.MouseButton1Click:Fire() else el:Open() end
+		if open then el:Cancel() else el:Open() end
 	end)
 
 	finalize(self, el, b, opts)
@@ -876,6 +1104,59 @@ end
 --------------------------------------------------------------------
 -- Section
 --------------------------------------------------------------------
+function Container:AddTextBox(opts)
+	opts = opts or {}
+	local win = self.Window
+	local b = buildBase(self, opts, 0, 180)
+	local el = { Kind = "TextBox" }
+
+	local holder = new("Frame", {
+		BackgroundColor3 = Theme.Off, Size = UDim2.fromOffset(160, 26),
+		Position = UDim2.new(1, -172, 0.5, -13), Parent = b.Header,
+	}, { corner(6), stroke(Theme.Stroke, 1, 0) })
+	local hs = holder:FindFirstChildOfClass("UIStroke")
+	local box = new("TextBox", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 1, 0),
+		Text = tostring(opts.Default or ""), PlaceholderText = opts.Placeholder or "Text eingeben...",
+		PlaceholderColor3 = Theme.SubText, ClearTextOnFocus = opts.ClearOnFocus == true,
+		Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.Text,
+		TextXAlignment = Enum.TextXAlignment.Left, ClipsDescendants = true, Parent = holder,
+	})
+
+	local function clean(t)
+		if opts.Numeric then t = t:gsub("[^%d%.%-]", "") end
+		if opts.MaxLength and #t > opts.MaxLength then t = t:sub(1, opts.MaxLength) end
+		return t
+	end
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		local t = clean(box.Text)
+		if t ~= box.Text then box.Text = t; return end
+		safe(opts.Changed, box.Text)
+	end)
+	box.Focused:Connect(function() tween(hs, 0.15, { Color = Theme.Accent }) end)
+	box.FocusLost:Connect(function(enter)
+		tween(hs, 0.15, { Color = Theme.Stroke })
+		safe(opts.Callback, box.Text, enter)
+	end)
+	b.Hit.Activated:Connect(function()
+		if not el.Locked then box:CaptureFocus() end
+	end)
+	selectFX(win, box,
+		function() tween(hs, 0.15, { Color = Theme.Accent }) end,
+		function() tween(hs, 0.15, { Color = Theme.Stroke }) end)
+	el._onLock = function(l) box.TextEditable = not l; box.Selectable = not l end
+
+	function el:Get() return box.Text end
+	function el:Set(v, silent)
+		box.Text = tostring(v or "")
+		if not silent then safe(opts.Callback, box.Text, false) end
+	end
+	function el:Focus() box:CaptureFocus() end
+
+	finalize(self, el, b, opts)
+	return el
+end
+
 function Container:AddSection(opts)
 	if type(opts) == "string" then opts = { Title = opts } end
 	opts = opts or {}
@@ -925,6 +1206,7 @@ function Container:AddKeybind(opts)
 	}, { corner(6) })
 	local btnStroke = stroke(Theme.Accent, 1, 1)
 	btnStroke.Parent = btn
+	el._onLock = function(l) btn.Selectable = not l end
 
 	local function render()
 		btn.Text = listening and "Taste..." or (key and key.Name or "...")
@@ -939,7 +1221,7 @@ function Container:AddKeybind(opts)
 		if not silent then safe(opts.Callback, key) end
 	end
 
-	btn.MouseButton1Click:Connect(function()
+	btn.Activated:Connect(function()
 		if el.Locked then return end
 		listening = true
 		win.Listening = true
@@ -948,7 +1230,7 @@ function Container:AddKeybind(opts)
 
 	win:_Connect(UIS.InputBegan, function(input, gp)
 		if listening then
-			if input.UserInputType == Enum.UserInputType.Keyboard then
+			if input.UserInputType == Enum.UserInputType.Keyboard or input.KeyCode.Name:find("^Button") then
 				listening = false
 				task.defer(function() win.Listening = false end)
 				if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
@@ -1039,10 +1321,18 @@ function Window:AddTab(opts)
 		self:_HideTip()
 		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 1 }) end
 	end)
-	btn.MouseButton1Click:Connect(function() self:_SelectTab(tab) end)
+	selectFX(self, btn, function()
+		if opts.Description and opts.Description ~= "" then self:_ShowTip(opts.Description, btn) end
+		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 0.88 }) end
+	end, function()
+		self:_HideTip()
+		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 1 }) end
+	end)
+	btn.Activated:Connect(function() self:_SelectTab(tab) end)
 
 	function tab:SetLock(state, mode)
 		mode = mode or "Gray"
+		btn.Selectable = not state
 		self.Locked = state and true or false
 		if self.Locked then
 			if mode == "Hide" then btn.Visible = false else btn.Visible = true; btn.BackgroundTransparency = 1; tween(self.Label, 0.2, { TextColor3 = Theme.Off }) end
@@ -1091,11 +1381,11 @@ function Window:_RunLoading(opts)
 	}
 	local total = opts.LoadTime or 5
 
-	local scr = new("CanvasGroup", {
+	local scr = new("Frame", {
 		Name = "Loading", BackgroundColor3 = Theme.LoadBg, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1),
-		ZIndex = 100, GroupTransparency = 1, Parent = self.Gui,
+		ZIndex = 100, Parent = self.Gui,
 	})
-	local scale = new("UIScale", { Scale = 1, Parent = scr })
+	local scale
 	new("Frame", {   -- leichter Verlauf
 		BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), Parent = scr,
 	}, { new("UIGradient", {
@@ -1157,7 +1447,11 @@ function Window:_RunLoading(opts)
 		tween(status, 0.12, { TextTransparency = 0 })
 	end
 
-	tween(scr, 0.5, { GroupTransparency = 0 })
+	scale = new("UIScale", { Scale = 0.94, Parent = box })
+	local inSnap = fadeCapture(scr)
+	fadeSet(inSnap, 1)
+	fadeTween(inSnap, 0.5, 0)
+	tween(scale, 0.6, { Scale = 1 })
 	local per = total / #steps
 	for i, text in ipairs(steps) do
 		if self.Destroyed then spin:Disconnect(); return end
@@ -1169,7 +1463,7 @@ function Window:_RunLoading(opts)
 	task.wait(0.35)
 
 	tween(scale, 0.6, { Scale = 1.08 })
-	tween(scr, 0.6, { GroupTransparency = 1 })
+	fadeTween(fadeCapture(scr), 0.6, 1)
 	task.wait(0.65)
 	spin:Disconnect()
 	scr:Destroy()
@@ -1202,9 +1496,9 @@ function Window:_RunKeySystem(ks)
 		BackgroundColor3 = Theme.LoadBg, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Size = UDim2.fromScale(1, 1), ZIndex = 89, Parent = gui,
 	})
-	local panel = new("CanvasGroup", {
+	local panel = new("Frame", {
 		BackgroundColor3 = Theme.Main, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(360, ks.GetKeyLink and 250 or 212), GroupTransparency = 1, ZIndex = 90, Parent = gui,
+		Size = UDim2.fromOffset(360, ks.GetKeyLink and 250 or 212), ZIndex = 90, Parent = gui,
 	}, { corner(12), stroke(Theme.Accent, 1, 0.45) })
 	local scale = new("UIScale", { Scale = 0.9, Parent = panel })
 
@@ -1239,7 +1533,7 @@ function Window:_RunKeySystem(ks)
 			BackgroundColor3 = Theme.Off, AutoButtonColor = false, Text = "Key holen (Link kopieren)", Font = Enum.Font.GothamMedium,
 			TextSize = 13, TextColor3 = Theme.Text, Position = UDim2.fromOffset(20, 194), Size = UDim2.new(1, -40, 0, 34), Parent = panel,
 		}, { corner(8) })
-		get.MouseButton1Click:Connect(function()
+		get.Activated:Connect(function()
 			if setclipboard then
 				pcall(setclipboard, ks.GetKeyLink)
 				status.TextColor3 = Theme.Accent
@@ -1252,7 +1546,9 @@ function Window:_RunKeySystem(ks)
 	end
 
 	tween(backdrop, 0.4, { BackgroundTransparency = 0.25 })
-	tween(panel, 0.4, { GroupTransparency = 0 })
+	local inSnap = fadeCapture(panel)
+	fadeSet(inSnap, 1)
+	fadeTween(inSnap, 0.4, 0)
 	tween(scale, 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
 
 	local passed, busy = false, false
@@ -1284,13 +1580,13 @@ function Window:_RunKeySystem(ks)
 			busy = false
 		end
 	end
-	submit.MouseButton1Click:Connect(check)
+	submit.Activated:Connect(check)
 	box.FocusLost:Connect(function(enter) if enter then check() end end)
 
 	repeat task.wait(0.1) until passed or self.Destroyed
 	task.wait(0.4)
 	tween(scale, 0.4, { Scale = 1.06 })
-	tween(panel, 0.4, { GroupTransparency = 1 })
+	fadeTween(fadeCapture(panel), 0.4, 1)
 	tween(backdrop, 0.4, { BackgroundTransparency = 1 })
 	task.wait(0.45)
 	panel:Destroy()
@@ -1329,20 +1625,26 @@ function CGui:CreateWindow(opts)
 		if not gui.Parent then gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
 	end
 	win.Gui = gui
+	win.NoSel = new("Frame", { Name = "NoSel", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
 
 	-- Hauptfenster
 	local size = opts.Size or Vector2.new(640, 420)
+	size = Vector2.new(size.X - size.X % 2, size.Y - size.Y % 2)   -- gerade Pixel = scharfer Text
+	local cam = workspace.CurrentCamera
+	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
 	local minSize = Vector2.new(480, 300)
-	local main = new("CanvasGroup", {
-		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	local main = new("Frame", {
+		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(math.floor(vp.X / 2), math.floor(vp.Y / 2)),
 		Size = UDim2.fromOffset(size.X, size.Y), BackgroundColor3 = Theme.Main, BorderSizePixel = 0,
-		GroupTransparency = 1, Visible = false, Parent = gui,
+		Visible = false, Parent = gui,
 	}, { corner(12), stroke(Theme.Stroke, 1, 0) })
 	win.Main = main
 	win.Scale = new("UIScale", { Scale = 0.9, Parent = main })
 
 	-- Topbar: Name (+ Version)
-	local top = new("Frame", { BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 46), Parent = main })
+	local top = new("Frame", { BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 46), Parent = main }, { corner(12) })
+	new("Frame", { BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Position = UDim2.new(0, 0, 1, -12), Size = UDim2.new(1, 0, 0, 12), Parent = top })
 	local hasVersion = win.Version ~= ""
 	new("TextLabel", {
 		BackgroundTransparency = 1, Position = hasVersion and UDim2.fromOffset(16, 6) or UDim2.new(0, 16, 0, 0),
@@ -1377,7 +1679,8 @@ function CGui:CreateWindow(opts)
 	})
 	win.Arrow.MouseEnter:Connect(function() tween(win.Arrow, 0.15, { TextColor3 = Theme.Text }) end)
 	win.Arrow.MouseLeave:Connect(function() tween(win.Arrow, 0.15, { TextColor3 = Theme.Accent }) end)
-	win.Arrow.MouseButton1Click:Connect(function() win:SetTabsExpanded(not win.TabsExpanded) end)
+	win.Arrow.Activated:Connect(function() win:SetTabsExpanded(not win.TabsExpanded) end)
+	selectFX(win, win.Arrow, function() win.Arrow.TextColor3 = Theme.Text end, function() win.Arrow.TextColor3 = Theme.Accent end)
 
 	win.TabList = new("ScrollingFrame", {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(0, 32), Size = UDim2.new(1, 0, 1, -34),
@@ -1421,7 +1724,12 @@ function CGui:CreateWindow(opts)
 	win:_Connect(RunService.RenderStepped, function()
 		if win.Tip.Visible then
 			local m = UIS:GetMouseLocation()
-			win.Tip.Position = UDim2.fromOffset(m.X + 14, m.Y + 16)
+			local a = win._tipAnchor
+			if a and a.Parent then
+				win.Tip.Position = UDim2.fromOffset(a.AbsolutePosition.X, a.AbsolutePosition.Y + a.AbsoluteSize.Y + 6)
+			else
+				win.Tip.Position = UDim2.fromOffset(m.X + 14, m.Y + 16)
+			end
 		end
 	end)
 
@@ -1435,6 +1743,7 @@ function CGui:CreateWindow(opts)
 	win:_Connect(UIS.InputChanged, function(input)
 		if dragging and isMove(input) then
 			local d = input.Position - dragStart
+			d = Vector3.new(math.floor(d.X + 0.5), math.floor(d.Y + 0.5), 0)
 			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
 		end
 	end)
@@ -1465,6 +1774,7 @@ function CGui:CreateWindow(opts)
 		if resizing and isMove(input) then
 			local d = input.Position - rStart
 			local nw, nh = math.max(minSize.X, rSize.X + d.X), math.max(minSize.Y, rSize.Y + d.Y)
+			nw, nh = math.floor(nw / 2) * 2, math.floor(nh / 2) * 2   -- gerade Pixel
 			main.Size = UDim2.fromOffset(nw, nh)
 			main.Position = UDim2.new(rPos.X.Scale, rPos.X.Offset + (nw - rSize.X) / 2, rPos.Y.Scale, rPos.Y.Offset + (nh - rSize.Y) / 2)
 		end
@@ -1475,7 +1785,18 @@ function CGui:CreateWindow(opts)
 
 	-- GUI per Keybind öffnen/schließen
 	win:_Connect(UIS.InputBegan, function(input, gp)
-		if gp or win.Listening or not win.Ready then return end
+		if win.Listening or not win.Ready then return end
+		if win.Visible then   -- Gamepad: L1/R1 = Tab wechseln, B = Sub-Settings zu, Y = Sub-Settings auf
+			local kc = input.KeyCode
+			if kc == Enum.KeyCode.ButtonR1 then win:_StepTab(1)
+			elseif kc == Enum.KeyCode.ButtonL1 then win:_StepTab(-1)
+			elseif kc == Enum.KeyCode.ButtonB then win:_CloseSub()
+			elseif kc == Enum.KeyCode.ButtonY then
+				local fn = win._subHits and win._subHits[GuiService.SelectedObject]
+				if fn then fn() end
+			end
+		end
+		if gp then return end
 		if win.ToggleKey and input.KeyCode == win.ToggleKey then win:Toggle() end
 	end)
 
