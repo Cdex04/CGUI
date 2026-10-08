@@ -33,7 +33,7 @@ local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local CGui = { Version = "1.2.0", _windows = {} }
+local CGui = { Version = "1.2.1", _windows = {} }
 
 -- Theme-System: CGui.Theme / CGui:SetTheme(...) wirken live auf bestehende Fenster
 local Presets = {
@@ -289,6 +289,24 @@ end
 -- Icons: rbxassetid-Strings / Zahlen direkt, Lucide-Namen über einen Provider.
 -- CGui:SetIconProvider(function(name) return "rbxassetid://123" -- oder {Image=, ImageRectSize=, ImageRectOffset=} end)
 function CGui:SetIconProvider(fn) CGui.IconProvider = fn end
+
+-- Lucide-Icons ueber latte-soft/lucide-roblox laden (braucht game:HttpGet). Bei Fehler: Warnung, false.
+function CGui:LoadLucide(url)
+	local ok, lib = pcall(function()
+		return loadstring(game:HttpGet(url or "https://github.com/latte-soft/lucide-roblox/releases/latest/download/lucide-roblox.luau"))()
+	end)
+	if not ok or type(lib) ~= "table" or not lib.GetAsset then
+		warn("[CGui] Lucide konnte nicht geladen werden: " .. tostring(lib))
+		return false
+	end
+	CGui.IconProvider = function(name)
+		local ok2, asset = pcall(lib.GetAsset, name, 48)
+		if ok2 and asset then
+			return { Image = asset.Url, ImageRectSize = asset.ImageRectSize, ImageRectOffset = asset.ImageRectOffset }
+		end
+	end
+	return true
+end
 
 local function applyIcon(img, icon)
 	if not icon or icon == "" then return false end
