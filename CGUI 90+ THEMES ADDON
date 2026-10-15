@@ -1,0 +1,154 @@
+--[[
+	CGui Themes Addon  -  90 zusaetzliche Themes (75 dunkel, 15 hell)
+	Braucht CGui ab v1.2.0 (CGui:RegisterTheme / CGui:SetTheme).
+
+	Nutzung (Variante 1 - direkt installieren):
+		local CGui = loadstring(game:HttpGet("URL_ZU_CGUI"))()
+		local Themes = loadstring(game:HttpGet("URL_ZU_DIESEM_SCRIPT"))(CGui)
+		CGui:SetTheme("Dracula")
+
+	Variante 2 - erst laden, dann installieren:
+		local Themes = loadstring(game:HttpGet("URL_ZU_DIESEM_SCRIPT"))()
+		Themes.Install(CGui)
+
+	Hilfen:
+		Themes.Names    -- alle Namen (z.B. als Options fuer ein Dropdown)
+		Themes.Dark     -- nur dunkle Themes
+		Themes.Light    -- nur helle Themes
+		Themes.Random(CGui)  -- wendet ein zufaelliges Theme an und gibt den Namen zurueck
+]]
+
+local KEYS = { "Main", "Topbar", "Element", "ElementHover", "Stroke", "Off", "Accent", "AccentHover",
+	"Text", "SubText", "OnAccent", "Error", "Overlay", "LoadBg", "LoadBg2" }
+
+-- { Name, Modus (D = dunkel, L = hell), 15 Farben in der Reihenfolge von KEYS }
+local DATA = {
+	{ "Ocean", "D", "0a1217 0f1a21 15222b 1e2f3b 2b3e4c 314757 1e9bff 30a3ff e6eff5 8ea0ad ffffff e05555 05080a 060a0d 0e161c" },
+	{ "Deep Sea", "D", "081317 0c1c21 11252b 18323b 25434c 2a4b57 00c2d1 13e0f0 e6f1f5 8ea6ad ffffff e05555 04090a 040b0d 0c181c" },
+	{ "Abyss", "D", "090d17 0d1221 13192b 1b233b 28314c 2d3757 3d7bff 4d86ff e6eaf5 8e96ad ffffff e05555 04060a 05070d 0d111c" },
+	{ "Cobalt", "D", "0b0f17 111621 171e2b 20293b 2e384c 344057 2f6bff 4077ff e6ebf5 8e99ad ffffff e05555 05070a 06080d 0f141c" },
+	{ "Sapphire", "D", "0a0c17 0f1221 15182b 1e223b 2b304c 313757 5b7cff 6886ff e6e9f5 8e93ad ffffff e05555 05060a 06070d 0e101c" },
+	{ "Indigo Night", "D", "0b0a17 100f21 17152b 201e3b 2e2b4c 343157 7a6cff 8578ff e7e6f5 918ead ffffff e05555 05050a 06060d 0f0e1c" },
+	{ "Violet", "D", "100b17 171121 1f172b 2b203b 3b2e4c 423457 9b6bff a377ff ece6f5 9b8ead ffffff e05555 07050a 09060d 150f1c" },
+	{ "Amethyst", "D", "130d17 1b1221 24192b 31233b 41314c 4a3757 b26bff b877ff efe6f5 a08ead ffffff e05555 08060a 0a070d 17111c" },
+	{ "Orchid", "D", "160e17 201421 2a1b2b 39263b 4a344c 543b57 d96bff dc77ff f4e6f5 ab8ead ffffff e05555 0a060a 0c080d 1b121c" },
+	{ "Magenta", "D", "170b14 21111d 2b1726 3b2034 4c2e45 57344e f03cb8 ff4fc8 f5e6f1 ad8ea6 ffffff e05555 0a0509 0d060b 1c0f19" },
+	{ "Rose", "D", "170d10 211217 2b191f 3b232b 4c313a 573742 ff5c8a ff6993 f5e6eb ad8e99 ffffff e05555 0a0607 0d0709 1c1114" },
+	{ "Crimson", "D", "170a0c 210f12 2b1518 3b1e22 4c2b30 573137 e5304f ff4665 f5e6e9 ad8e93 ffffff e05555 0a0506 0d0607 1c0e10" },
+	{ "Ruby", "D", "17090a 210d0f 2b1315 3b1b1e 4c282b 572d31 d91e3e f83355 f5e6e7 ad8e91 ffffff e05555 0a0405 0d0506 1c0d0e" },
+	{ "Scarlet", "D", "170b0a 21100f 2b1715 3b201e 4c2e2b 573431 ff4a3d ff584d f5e7e6 ad918e ffffff e05555 0a0505 0d0606 1c0f0e" },
+	{ "Ember", "D", "170e0b 211511 2b1c17 3b2720 4c362e 573d34 ff6a2b ff763c f5eae6 ad968e ffffff e05555 0a0605 0d0806 1c130f" },
+	{ "Sunset", "D", "17100d 211712 2b1f19 3b2b23 4c3a31 574237 ff8a3d ff934d f5ebe6 ad998e 0a0a0e e05555 0a0706 0d0907 1c1411" },
+	{ "Amber", "D", "17120b 211a11 2b2317 3b3020 4c402e 574834 ffb020 ffb632 f5efe6 ada08e 0a0a0e e05555 0a0805 0d0a06 1c170f" },
+	{ "Gold", "D", "17140d 211d12 2b2719 3b3523 4c4631 574f37 f2c230 ffd043 f5f1e6 ada68e 0a0a0e e05555 0a0906 0d0b07 1c1911" },
+	{ "Lemon", "D", "17160e 212014 2b2a1b 3b3926 4c4a34 57543b e6e04a fff960 f5f4e6 adab8e 0a0a0e e05555 0a0a06 0d0c08 1c1b12" },
+	{ "Lime", "D", "14170d 1c2112 252b19 333b23 434c31 4c5737 9be02f b6ff46 f0f5e6 a3ad8e 0a0a0e e05555 090a06 0b0d07 181c11" },
+	{ "Emerald", "D", "0a1711 0f2118 152b20 1e3b2c 2b4c3c 315744 16c77a 2ae694 e6f5ed 8ead9e ffffff e05555 050a07 060d09 0e1c15" },
+	{ "Forest", "D", "0d1710 122117 192b1f 233b2b 314c3a 375742 3fbf5c 55de74 e6f5eb 8ead99 ffffff e05555 060a07 070d09 111c14" },
+	{ "Jade", "D", "0b1713 11211c 172b24 203b32 2e4c42 34574b 2bd4a0 41f3bc e6f5f0 8eada3 ffffff e05555 050a08 060d0b 0f1c18" },
+	{ "Mint", "D", "0f1715 16211e 1d2b28 283b36 374c47 3e5751 5cf2c8 6effd6 e6f5f1 8eada6 0a0a0e e05555 070a09 080d0c 131c1a" },
+	{ "Aqua", "D", "0b1617 112021 172a2b 20383b 2e4a4c 345457 2fe0e8 44f7ff e6f4f5 8eabad 0a0a0e e05555 050a0a 060c0d 0f1b1c" },
+	{ "Cyan Wave", "D", "091517 0d1e21 13272b 1b353b 28464c 2d5057 12d6f5 26e1ff e6f2f5 8ea8ad 0a0a0e e05555 04090a 050b0d 0d1a1c" },
+	{ "Arctic", "D", "101517 171e21 1f272b 2b353b 3a464c 425057 7fd6ff 89d9ff e6f0f5 8ea3ad 0a0a0e e05555 07090a 090b0d 141a1c" },
+	{ "Steel", "D", "111417 191d21 21262b 2d343b 3d454c 454e57 6e9bc9 87b7e8 e6edf5 8e9ead ffffff e05555 08090a 0a0b0d 16191c" },
+	{ "Slate", "D", "131517 1b1e21 24272b 31353b 41464c 4a4f57 7c93b8 96afd7 e6ecf5 8e9bad ffffff e05555 08090a 0a0b0d 18191c" },
+	{ "Graphite", "D", "171717 212121 2b2b2b 3b3b3b 4c4c4c 575757 8a94a6 a6b1c5 f5e6e6 ad8e8e ffffff e05555 0a0a0a 0d0d0d 1c1c1c" },
+	{ "Charcoal", "D", "171717 212121 2b2b2b 3b3b3b 4c4c4c 575757 ff9f1c ffa72e f5e6e6 ad8e8e 0a0a0e e05555 0a0a0a 0d0d0d 1c1c1c" },
+	{ "Carbon", "D", "151617 1e2021 282a2b 36393b 484b4c 515557 00d1b2 13f0cf e6f0f5 8ea3ad ffffff e05555 090a0a 0c0c0d 1a1b1c" },
+	{ "Obsidian", "D", "151417 1f1c21 28252b 37333b 48434c 514c57 a78bfa b197ff ede6f5 9e8ead 0a0a0e e05555 09090a 0c0b0d 1a181c" },
+	{ "Onyx", "D", "171717 212121 2b2b2b 3b3b3b 4c4c4c 575757 e5e5e5 ffffff f5e6e6 ad8e8e 0a0a0e e05555 0a0a0a 0d0d0d 1c1c1c" },
+	{ "Noir", "D", "171717 212121 2b2b2b 3b3b3b 4c4c4c 575757 ff3b6b ff4b77 f5e6e6 ad8e8e ffffff e05555 0a0a0a 0d0d0d 1c1c1c" },
+	{ "Coffee", "D", "17120f 211a16 2b231d 3b3028 4c4037 57493e d9a066 f8bc7f f5ece6 ad9b8e 0a0a0e e05555 0a0807 0d0a08 1c1713" },
+	{ "Mocha", "D", "171210 211b17 2b231f 3b302b 4c403a 574942 c98b5f e8a677 f5ebe6 ad998e ffffff e05555 0a0807 0d0a09 1c1714" },
+	{ "Chocolate", "D", "17100e 211714 2b1f1b 3b2b26 4c3a34 57423b e07b39 ff9550 f5eae6 ad968e ffffff e05555 0a0706 0d0908 1c1412" },
+	{ "Sand Dark", "D", "171511 211e19 2b2821 3b362d 4c473d 575145 d8b26e f7cf87 f5f0e6 ada38e 0a0a0e e05555 0a0908 0d0c0a 1c1a16" },
+	{ "Rust", "D", "170f0d 211512 2b1d19 3b2823 4c3631 573e37 d2552b f16d41 f5e9e6 ad948e ffffff e05555 0a0706 0d0807 1c1311" },
+	{ "Wine", "D", "170b0e 211115 2b171c 3b2027 4c2e36 57343d c2185b e12c73 f5e6ea ad8e96 ffffff e05555 0a0506 0d0608 1c0f13" },
+	{ "Plum", "D", "170d17 211221 2b192b 3b233b 4c314c 573757 ab47bc c85ddb f5e6f5 ad8ead ffffff e05555 0a060a 0d070d 1c111c" },
+	{ "Berry", "D", "170b11 211119 2b1721 3b202d 4c2e3d 573445 ec407a ff548e f5e6ed ad8e9e ffffff e05555 0a0508 0d060a 1c0f16" },
+	{ "Bubblegum", "D", "171015 21171e 2b1f27 3b2b35 4c3a46 574250 ff80c0 ff8ac5 f5e6f0 ad8ea3 0a0a0e e05555 0a0709 0d090b 1c141a" },
+	{ "Cherry Blossom", "D", "171112 21191a 2b2123 3b2d30 4c3d40 574548 ff9eb5 ffa6bb f5e6e9 ad8e93 0a0a0e e05555 0a0808 0d0a0a 1c1617" },
+	{ "Peach", "D", "171210 211b17 2b231f 3b302b 4c403a 574942 ffa07a ffa885 f5ebe6 ad998e 0a0a0e e05555 0a0807 0d0a09 1c1714" },
+	{ "Coral", "D", "170f0e 211614 2b1e1b 3b2926 4c3834 57403b ff7f6b ff8977 f5e9e6 ad938e 0a0a0e e05555 0a0706 0d0808 1c1412" },
+	{ "Salmon", "D", "17100f 211716 2b1f1d 3b2b28 4c3a37 57423e fa8072 ff8d7f f5e8e6 ad928e 0a0a0e e05555 0a0707 0d0908 1c1413" },
+	{ "Tangerine", "D", "17110b 211811 2b2017 3b2d20 4c3c2e 574434 ff9500 ff9d14 f5ede6 ad9d8e 0a0a0e e05555 0a0705 0d0906 1c150f" },
+	{ "Honey", "D", "17140e 211d14 2b261b 3b3426 4c4534 574e3b ffc247 ffc756 f5f0e6 ada48e 0a0a0e e05555 0a0906 0d0b08 1c1912" },
+	{ "Olive", "D", "15170f 1e2116 282b1d 363b28 474c37 51573e a3b83c c0d752 f1f5e6 a6ad8e 0a0a0e e05555 090a07 0c0d08 1a1c13" },
+	{ "Moss", "D", "12170f 192116 222b1d 2e3b28 3e4c37 47573e 7fb069 9acf82 ebf5e6 99ad8e ffffff e05555 080a07 0a0d08 161c13" },
+	{ "Pine", "D", "0b1711 112119 172b21 203b2d 2e4c3d 345745 2e9e6b 42bd85 e6f5ed 8ead9e ffffff e05555 050a08 060d0a 0f1c16" },
+	{ "Lagoon", "D", "0a1717 0f2121 152b2b 1e3b3b 2b4c4c 315757 14b8a6 27d7c3 e6f5f5 8eadad ffffff e05555 050a0a 060d0d 0e1c1c" },
+	{ "Turquoise", "D", "0b1716 112120 172b2a 203b38 2e4c4a 345754 1fd1c1 34f0df e6f5f4 8eadab ffffff e05555 050a0a 060d0c 0f1c1b" },
+	{ "Neon Green", "D", "09170b 0d2111 132b17 1b3b20 284c2e 2d5734 39ff14 49ff27 e6f5e9 8ead93 0a0a0e e05555 040a05 050d06 0d1c0f" },
+	{ "Neon Pink", "D", "170912 210d1b 2b1323 3b1b30 4c2840 572d49 ff2daa ff3eb1 f5e6f0 ad8ea3 ffffff e05555 0a0408 0d050a 1c0d17" },
+	{ "Neon Blue", "D", "090f17 0d1621 131d2b 1b283b 28374c 2d3e57 1f8bff 3194ff e6ecf5 8e9bad ffffff e05555 04070a 05080d 0d131c" },
+	{ "Neon Purple", "D", "120917 1b0d21 23132b 301b3b 40284c 492d57 b026ff b637ff f0e6f5 a38ead ffffff e05555 08040a 0a050d 170d1c" },
+	{ "Cyberpunk", "D", "140917 1c0d21 25132b 331b3b 43284c 4c2d57 fcee0a fff21e f1e6f5 a68ead 0a0a0e e05555 09040a 0b050d 180d1c" },
+	{ "Synthwave", "D", "110a17 180f21 20152b 2c1e3b 3c2b4c 443157 ff3cac ff4cb3 ede6f5 9e8ead ffffff e05555 07050a 09060d 150e1c" },
+	{ "Vaporwave", "D", "140e17 1d1421 261b2b 34263b 44344c 4d3b57 00e5ff 14e7ff f0e6f5 a38ead 0a0a0e e05555 09060a 0b080d 19121c" },
+	{ "Matrix", "D", "0a170c 0f2112 152b18 1e3b22 2b4c30 315737 00ff41 14ff50 e6f5e9 8ead93 ffffff e05555 050a06 060d07 0e1c10" },
+	{ "Hacker", "D", "101710 172117 1f2b1f 2b3b2b 3a4c3a 425742 33ff66 43ff72 e6f5e6 8ead8e 0a0a0e e05555 070a07 090d09 141c14" },
+	{ "Terminal", "D", "141712 1d211b 262b23 343b30 444c40 4d5749 a6e22e c1ff44 ebf5e6 99ad8e 0a0a0e e05555 090a08 0b0d0a 191c17" },
+	{ "Dracula", "D", "120f17 191621 221d2b 2e283b 3e374c 473e57 bd93f9 c69fff ebe6f5 998ead 0a0a0e e05555 08070a 0a080d 16131c" },
+	{ "Nord", "D", "101217 171b21 1f232b 2b303b 3a404c 424957 88c0d0 a3deef e6ebf5 8e99ad 0a0a0e e05555 07080a 090a0d 14171c" },
+	{ "Monokai", "D", "171714 21211d 2b2b26 3b3b34 4c4c45 57574e f92672 ff3880 f5f5e6 adad8e ffffff e05555 0a0a09 0d0d0b 1c1c19" },
+	{ "Solarized Dark", "D", "051317 071c21 0a252b 10323b 1c434c 1f4c57 2aa198 3dc0b6 e6f2f5 8ea7ad ffffff e05555 02090a 030b0d 08181c" },
+	{ "Gruvbox", "D", "171512 211e1b 2b2723 3b3530 4c4640 575049 fabd2f ffc641 f5ede6 ad9e8e 0a0a0e e05555 0a0908 0d0b0a 1c1a17" },
+	{ "Tokyo Night", "D", "0d0e17 121521 191c2b 23273b 31364c 373d57 7aa2f7 88aeff e6e9f5 8e93ad 0a0a0e e05555 06060a 07080d 11131c" },
+	{ "Catppuccin", "D", "111117 191921 21212b 2d2d3b 3d3d4c 454557 cba6f7 d5b2ff e6e6f5 8e8ead 0a0a0e e05555 08080a 0a0a0d 16161c" },
+	{ "One Dark", "D", "121417 1b1d21 23262b 30343b 40444c 494d57 61afef 74c0ff e6ebf5 8e99ad 0a0a0e e05555 08090a 0a0b0d 17191c" },
+	{ "Material", "D", "121517 1b1f21 23292b 30373b 40484c 495257 80cbc4 9aeae2 e6f0f5 8ea3ad 0a0a0e e05555 080a0a 0a0c0d 171a1c" },
+	{ "Ayu Dark", "D", "101217 171b21 1f232b 2b303b 3a404c 424957 ffb454 ffba62 e6ebf5 8e99ad 0a0a0e e05555 07080a 090a0d 14171c" },
+	{ "Snow", "L", "f3f5f6 e5e8e9 fcfdfe e8eced d1d4d6 c6cacc 2f80ed 4393ff 1b2429 50626b ffffff cc3939 d7dadb eff1f2 e1e4e6" },
+	{ "Paper", "L", "f6f5f3 e9e8e5 fefdfc edece8 d6d4d1 cccac6 c0792b df9340 29241b 6b6250 ffffff cc3939 dbdad7 f2f1ef e6e4e1" },
+	{ "Cream", "L", "f6f5f0 e9e7e1 fefdfb edebe4 d6d4cb ccc9c0 d08b2b efa640 29251b 6b6450 ffffff cc3939 dbd9d3 f2f1ec e6e3dc" },
+	{ "Sky", "L", "ecf2f6 dbe3e9 f8fcfe dde6ed c3ced6 b7c3cc 1e88e5 33a0ff 1b2329 50606b ffffff cc3939 ccd5db e8eef2 d5dfe6" },
+	{ "Mint Light", "L", "edf6f3 dde9e5 f9fefc dfede8 c6d6d1 baccc6 12a37f 23c29a 1b2924 506b62 ffffff cc3939 cedbd7 eaf2ef d8e6e1" },
+	{ "Lavender", "L", "f2eff6 e3dfe9 fcfafe e6e1ed cec9d6 c3bdcc 7c5ce0 9675ff 201b29 5b506b ffffff cc3939 d5d0db eeebf2 dfdae6" },
+	{ "Blush", "L", "f6f0f2 e9e1e3 fefbfb ede4e6 d6cbce ccc0c3 e0527a ff6a94 291b1e 6b5057 ffffff cc3939 dbd3d5 f2ecee e6dcdf" },
+	{ "Peach Light", "L", "f6f1ef e9e2df fefbfa ede5e1 d6cdc9 ccc2bd e8743b ff8a50 291f1b 6b5950 ffffff cc3939 dbd4d0 f2edeb e6deda" },
+	{ "Lemon Light", "L", "f6f5ef e9e8df fefdfa edece1 d6d5c9 cccbbd b59b00 d4b811 29281b 6b6950 ffffff cc3939 dbdad0 f2f2eb e6e5da" },
+	{ "Sage", "L", "f1f6f1 e2e9e2 fbfefb e5ede5 cdd6cd c1ccc1 4f8f5b 66ae74 1b291b 506b50 ffffff cc3939 d3dbd3 edf2ed dde6dd" },
+	{ "Cloud", "L", "f4f5f6 e6e8e9 fdfdfe e9ebed d2d4d6 c7cacc 5b6b82 7486a1 1b2229 505e6b ffffff cc3939 d8dadb f0f1f2 e2e4e6" },
+	{ "Sand", "L", "f6f4f0 e9e6e0 fefcfa ede9e3 d6d2ca ccc7bf b8863b d7a150 29241b 6b6150 ffffff cc3939 dbd8d2 f2f0ec e6e2db" },
+	{ "Rose Quartz", "L", "f6f2f2 e9e3e4 fefbfc ede6e7 d6ced0 ccc3c4 d1496b f06084 291b1d 6b5055 ffffff cc3939 dbd5d6 f2eeef e6dfe0" },
+	{ "Solarized Light", "L", "f6f5f3 e9e8e4 fefdfc edece7 d6d4d0 cccac5 268bd2 3ba6f1 29251b 6b6450 ffffff cc3939 dbdad6 f2f1ef e6e4e0" },
+	{ "Ice", "L", "f0f5f6 e1e7e9 fbfdfe e4ebed cbd4d6 c0c9cc 0097a7 10b4c6 1b2529 50646b ffffff cc3939 d3d9db ecf1f2 dce3e6" },
+}
+
+local function hex(h)
+	return Color3.fromRGB(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16))
+end
+
+local Themes = { Names = {}, Dark = {}, Light = {}, Data = {} }
+
+for _, entry in ipairs(DATA) do
+	local name, mode, colors = entry[1], entry[2], entry[3]
+	local theme, i = {}, 0
+	for h in colors:gmatch("%x%x%x%x%x%x") do
+		i = i + 1
+		theme[KEYS[i]] = hex(h)
+	end
+	Themes.Data[name] = theme
+	table.insert(Themes.Names, name)
+	table.insert(mode == "D" and Themes.Dark or Themes.Light, name)
+end
+
+function Themes.Install(CGui)
+	assert(CGui and CGui.RegisterTheme, "[CGui Themes] Bitte CGui v1.2.0 oder neuer uebergeben: Themes.Install(CGui)")
+	for _, name in ipairs(Themes.Names) do
+		CGui:RegisterTheme(name, Themes.Data[name])
+	end
+	return Themes
+end
+
+function Themes.Random(CGui)
+	local name = Themes.Names[math.random(1, #Themes.Names)]
+	CGui:SetTheme(name)
+	return name
+end
+
+-- Wird CGui direkt uebergeben (loadstring(...)(CGui)), installiert sich das Addon sofort
+local CGuiArg = ...
+if CGuiArg then Themes.Install(CGuiArg) end
+
+return Themes
