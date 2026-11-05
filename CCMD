@@ -1,5 +1,5 @@
 --[[
-	NeonCmd UI Library  v1.1
+	NeonCmd UI Library  v1.1.1
 	Command-UI fuer Roblox Executor (Luau). Laeuft komplett in gethui() / CoreGui.
 
 	KURZ-ANLEITUNG (ausfuehrlich: NeonCmd_Anleitung.md)
@@ -2782,6 +2782,17 @@ function Lib:Unload()
 	if Blur then pcall(function() Blur:Destroy() end) end
 	if Gui then pcall(function() Gui:Destroy() end) end
 	if genv.__NeonCmd == Lib then genv.__NeonCmd = nil end
+end
+
+-- Automatischer Start beim Laden ueber loadstring(game:HttpGet(...))()
+-- Lib:Start() ist intern gegen mehrfaches Starten abgesichert.
+if not Lib.Built then
+	local ok, err = pcall(function()
+		Lib:Start({Name = "NeonCmd", DefaultCommands = true})
+	end)
+	if not ok then
+		warn("[NeonCmd] Auto-Start fehlgeschlagen: " .. tostring(err))
+	end
 end
 
 return Lib
