@@ -1,5 +1,5 @@
 --[[
-	NeonCmd UI Library  v1.1.2
+	NeonCmd UI Library  v1.1 (register-limit fix)
 	Command-UI fuer Roblox Executor (Luau). Laeuft komplett in gethui() / CoreGui.
 
 	KURZ-ANLEITUNG (ausfuehrlich: NeonCmd_Anleitung.md)
@@ -34,6 +34,14 @@
 ]]
 
 ---------------------------------------------------------------------------------------------------
+-- Privater Namensraum fuer Hilfsfunktionen (verhindert globale Namenskollisionen)
+---------------------------------------------------------------------------------------------------
+if getfenv and setfenv then
+	local _privateEnv = setmetatable({}, {__index = getfenv()})
+	setfenv(1, _privateEnv)
+end
+
+---------------------------------------------------------------------------------------------------
 -- Services / Grundlagen
 ---------------------------------------------------------------------------------------------------
 local Services = setmetatable({}, {__index = function(t, k)
@@ -53,30 +61,30 @@ genv.__NeonCmd = Lib
 ---------------------------------------------------------------------------------------------------
 -- Utils
 ---------------------------------------------------------------------------------------------------
-local function deepcopy(t)
+function deepcopy(t)
 	if type(t) ~= "table" then return t end
 	local r = {}
 	for k, v in pairs(t) do r[k] = deepcopy(v) end
 	return r
 end
-local function fillMissing(dst, src)
+function fillMissing(dst, src)
 	for k, v in pairs(src) do
 		if dst[k] == nil then dst[k] = deepcopy(v)
 		elseif type(v) == "table" and type(dst[k]) == "table" then fillMissing(dst[k], v) end
 	end
 end
-local function clamp(n, a, b) return math.max(a, math.min(b, n)) end
-local function round(n, step)
+function clamp(n, a, b) return math.max(a, math.min(b, n)) end
+function round(n, step)
 	step = step or 1
 	return tonumber(string.format("%.4f", math.floor(n / step + 0.5) * step))
 end
-local function trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
-local function parseHex(s)
+function trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+function parseHex(s)
 	s = tostring(s):gsub("#", "")
 	if #s == 6 and s:match("^%x+$") then return "#" .. s:upper() end
 end
 -- t <= 0 setzt direkt (kein Tween-Objekt -> performanter)
-local function tw(o, t, props, style, dir)
+function tw(o, t, props, style, dir)
 	if not t or t <= 0 then
 		for k, v in pairs(props) do o[k] = v end
 		return
@@ -86,19 +94,19 @@ local function tw(o, t, props, style, dir)
 	return tween
 end
 local LOc = 0
-local function nextLO() LOc = LOc + 1 return LOc end
+function nextLO() LOc = LOc + 1 return LOc end
 
 local Connections = {}
-local function track(c) Connections[#Connections + 1] = c return c end
+function track(c) Connections[#Connections + 1] = c return c end
 -- Verbindung die automatisch endet, wenn die Instanz zerstoert wird (fuer Komponenten)
-local function bind(inst, signal, fn)
+function bind(inst, signal, fn)
 	local c = signal:Connect(fn)
 	inst.Destroying:Connect(function() c:Disconnect() end)
 	return c
 end
-local function mousePos() return UIS:GetMouseLocation() end
+function mousePos() return UIS:GetMouseLocation() end
 
-local function clip(text)
+function clip(text)
 	if setclipboard then pcall(setclipboard, text) return true end
 	if toclipboard then pcall(toclipboard, text) return true end
 	return false
@@ -128,7 +136,7 @@ end
 local Themes, ThemeOrder = {}, {}
 local THEME_KEYS = {"bg", "panel", "panel2", "accent", "text", "sub"}
 local THEME_LABELS = {bg = "Hintergrund", panel = "Panel", panel2 = "Zeilen / Felder", accent = "Akzent (Neon)", text = "Text", sub = "Subtext"}
-local function addTheme(name, bg, panel, panel2, accent, text, sub)
+function addTheme(name, bg, panel, panel2, accent, text, sub)
 	Themes[name] = {bg = bg, panel = panel, panel2 = panel2, accent = accent, text = text, sub = sub}
 	ThemeOrder[#ThemeOrder + 1] = name
 end
@@ -179,14 +187,14 @@ fillMissing(S, DEFAULTS)
 local PROFILE_SKIP = {startProfile = true, lastTab = true, winX = true, winY = true}
 local ActiveProfile = "Default"
 
-local function snapshotProfile()
+function snapshotProfile()
 	local p = {settings = {}, commands = deepcopy(Data.commands)}
 	for k, v in pairs(S) do if not PROFILE_SKIP[k] then p.settings[k] = deepcopy(v) end end
 	return p
 end
 
 local saveQueued = false
-local function save()
+function save()
 	if saveQueued then return end
 	saveQueued = true
 	task.delay(0.6, function()
@@ -195,7 +203,7 @@ local function save()
 		FS.save(Data)
 	end)
 end
-local function loadData()
+function loadData()
 	local d = FS.load()
 	if type(d) == "table" then
 		for k, v in pairs(d.settings or {}) do S[k] = v end
@@ -215,7 +223,7 @@ local Registry, ThemeHooks, Corners = {}, {}, {}
 local Current = {}
 local themeConn
 
-local function resolveTheme()
+function resolveTheme()
 	local t = (S.theme == "Custom") and S.customTheme or Themes[S.theme] or Themes["Neon Blue"]
 	local out = {}
 	for _, k in ipairs(THEME_KEYS) do
@@ -226,33 +234,33 @@ local function resolveTheme()
 end
 Current = resolveTheme()
 
-local function themed(inst, map)
+function themed(inst, map)
 	Registry[#Registry + 1] = {inst, map}
 	for p, k in pairs(map) do inst[p] = Current[k] end
 	return inst
 end
-local function hook(inst, fn)
+function hook(inst, fn)
 	ThemeHooks[#ThemeHooks + 1] = {inst, fn}
 	fn(true)
 end
-local function prune()
+function prune()
 	for i = #Registry, 1, -1 do if not Registry[i][1].Parent then table.remove(Registry, i) end end
 	for i = #ThemeHooks, 1, -1 do if not ThemeHooks[i][1].Parent then table.remove(ThemeHooks, i) end end
 	for i = #Corners, 1, -1 do if not Corners[i][1].Parent then table.remove(Corners, i) end end
 end
-local function paint(colors)
+function paint(colors)
 	for i = 1, #Registry do
 		local e = Registry[i]
 		if e[1].Parent then for p, k in pairs(e[2]) do e[1][p] = colors[k] end end
 	end
 end
-local function runHooks(instant)
+function runHooks(instant)
 	for i = #ThemeHooks, 1, -1 do
 		local h = ThemeHooks[i]
 		if h[1].Parent then pcall(h[2], instant) end
 	end
 end
-local function applyTheme(instant)
+function applyTheme(instant)
 	local old = Current
 	Current = resolveTheme()
 	prune()
@@ -272,7 +280,7 @@ end
 ---------------------------------------------------------------------------------------------------
 -- UI-Bausteine
 ---------------------------------------------------------------------------------------------------
-local function New(class, props, kids)
+function New(class, props, kids)
 	local o = Instance.new(class)
 	local parent
 	props = props or {}
@@ -288,15 +296,15 @@ local function New(class, props, kids)
 	o.Parent = parent
 	return o
 end
-local function corner(o, m)
+function corner(o, m)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, math.floor(S.corner * (m or 1)))
 	c.Parent = o
 	Corners[#Corners + 1] = {c, m or 1}
 	return c
 end
-local function round_(o) return New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = o}) end
-local function stroke(o, tr, key)
+function round_(o) return New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = o}) end
+function stroke(o, tr, key)
 	local s = Instance.new("UIStroke")
 	s.Thickness = 1; s.Transparency = tr or 0.6
 	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -304,16 +312,16 @@ local function stroke(o, tr, key)
 	s.Parent = o
 	return s
 end
-local function padding(o, l, t, r, b)
+function padding(o, l, t, r, b)
 	return New("UIPadding", {PaddingLeft = UDim.new(0, l or 0), PaddingTop = UDim.new(0, t or l or 0),
 		PaddingRight = UDim.new(0, r or l or 0), PaddingBottom = UDim.new(0, b or t or l or 0), Parent = o})
 end
-local function List(parent, pad, dir, ha, va)
+function List(parent, pad, dir, ha, va)
 	return New("UIListLayout", {Padding = UDim.new(0, pad or 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		FillDirection = dir or Enum.FillDirection.Vertical, HorizontalAlignment = ha or Enum.HorizontalAlignment.Left,
 		VerticalAlignment = va or Enum.VerticalAlignment.Top, Parent = parent})
 end
-local function Label(props, ck)
+function Label(props, ck)
 	props.BackgroundTransparency = 1
 	props.Font = props.Font or Enum.Font.GothamMedium
 	props.TextSize = props.TextSize or 14
@@ -323,7 +331,7 @@ local function Label(props, ck)
 	themed(o, {TextColor3 = ck or "text"})
 	return o
 end
-local function Btn(props, bgk, tck)
+function Btn(props, bgk, tck)
 	props.BackgroundTransparency = props.BackgroundTransparency or 0.1
 	props.Font = props.Font or Enum.Font.GothamMedium
 	props.TextSize = props.TextSize or 14
@@ -331,11 +339,11 @@ local function Btn(props, bgk, tck)
 	themed(o, {BackgroundColor3 = bgk or "panel2", TextColor3 = tck or "text"})
 	return o
 end
-local function hover(o, a, b)
+function hover(o, a, b)
 	o.MouseEnter:Connect(function() tw(o, 0.15, {BackgroundTransparency = a}) end)
 	o.MouseLeave:Connect(function() tw(o, 0.15, {BackgroundTransparency = b}) end)
 end
-local function Scroll(props)
+function Scroll(props)
 	props.BackgroundTransparency = 1
 	props.ScrollBarThickness = props.ScrollBarThickness or 3
 	props.AutomaticCanvasSize = props.AutomaticCanvasSize or Enum.AutomaticSize.Y
@@ -345,7 +353,7 @@ local function Scroll(props)
 	themed(o, {ScrollBarImageColor3 = "accent"})
 	return o
 end
-local function clearKids(f)
+function clearKids(f)
 	for _, c in ipairs(f:GetChildren()) do
 		if not (c:IsA("UIListLayout") or c:IsA("UIPadding") or c:IsA("UIGridLayout")) then c:Destroy() end
 	end
@@ -363,20 +371,20 @@ local applyWindowMode, applyCmdFilter, rebuildChips, updateCorners
 ---------------------------------------------------------------------------------------------------
 -- Wiederverwendbare Komponenten (auch fuer Command-Settings und Addons: Lib.UI)
 ---------------------------------------------------------------------------------------------------
-local function RowBase(parent, h)
+function RowBase(parent, h)
 	local r = New("Frame", {Size = UDim2.new(1, 0, 0, h or 38), BackgroundTransparency = 0.15, LayoutOrder = nextLO(), Parent = parent})
 	themed(r, {BackgroundColor3 = "panel2"}); corner(r, 0.8)
 	return r
 end
-local function UI_Section(parent, text)
+function UI_Section(parent, text)
 	return Label({Text = "▍ " .. text:upper(), Font = Enum.Font.GothamBold, TextSize = 12, Size = UDim2.new(1, 0, 0, 24),
 		LayoutOrder = nextLO(), Parent = parent}, "accent")
 end
-local function UI_Text(parent, text)
+function UI_Text(parent, text)
 	return Label({Text = text, TextSize = 12, TextWrapped = true, TextTruncate = Enum.TextTruncate.None, AutomaticSize = Enum.AutomaticSize.Y,
 		Size = UDim2.new(1, 0, 0, 0), LayoutOrder = nextLO(), Parent = parent}, "sub")
 end
-local function UI_Toggle(parent, text, get, set)
+function UI_Toggle(parent, text, get, set)
 	local r = New("TextButton", {Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 0.15, Text = "", LayoutOrder = nextLO(), Parent = parent})
 	themed(r, {BackgroundColor3 = "panel2"}); corner(r, 0.8)
 	Label({Text = text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -70, 1, 0), Parent = r})
@@ -395,7 +403,7 @@ local function UI_Toggle(parent, text, get, set)
 	return {Row = r, Refresh = draw}
 end
 -- deferred = true: set() wird erst beim Loslassen aufgerufen (fuer Slider, die das eigene Fenster veraendern)
-local function UI_Slider(parent, text, min, max, step, get, set, suffix, deferred)
+function UI_Slider(parent, text, min, max, step, get, set, suffix, deferred)
 	local r = RowBase(parent, 50)
 	Label({Text = text, Position = UDim2.fromOffset(12, 4), Size = UDim2.new(0.6, 0, 0, 22), Parent = r})
 	local val = Label({Position = UDim2.new(0.6, 0, 0, 4), Size = UDim2.new(0.4, -12, 0, 22), TextXAlignment = Enum.TextXAlignment.Right, Parent = r}, "accent")
@@ -444,7 +452,7 @@ local function UI_Slider(parent, text, min, max, step, get, set, suffix, deferre
 	r.Destroying:Connect(function() if scrollParent then scrollParent.ScrollingEnabled = true end end)
 	return {Row = r, Refresh = function() render(get()) end}
 end
-local function UI_Input(parent, text, get, set, placeholder, width)
+function UI_Input(parent, text, get, set, placeholder, width)
 	local r = RowBase(parent, 38)
 	Label({Text = text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -(width or 160) - 24, 1, 0), Parent = r})
 	local box = New("TextBox", {Size = UDim2.new(0, width or 160, 0, 26), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
@@ -457,7 +465,7 @@ local function UI_Input(parent, text, get, set, placeholder, width)
 	end)
 	return {Row = r, Box = box}
 end
-local function UI_Keybind(parent, text, get, set)
+function UI_Keybind(parent, text, get, set)
 	local r = RowBase(parent, 38)
 	Label({Text = text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -150, 1, 0), Parent = r})
 	local b = Btn({Size = UDim2.fromOffset(120, 26), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Font = Enum.Font.Code, TextSize = 13, Parent = r}, "bg", "accent")
@@ -479,7 +487,7 @@ local function UI_Keybind(parent, text, get, set)
 	end)
 	return {Row = r, Refresh = draw}
 end
-local function UI_Segment(parent, text, options, get, set)
+function UI_Segment(parent, text, options, get, set)
 	local r = RowBase(parent, 38)
 	Label({Text = text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(0.4, 0, 1, 0), Parent = r})
 	local holder = New("Frame", {Size = UDim2.new(0.6, -10, 0, 26), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), BackgroundTransparency = 1, Parent = r})
@@ -499,7 +507,7 @@ local function UI_Segment(parent, text, options, get, set)
 	hook(r, draw)
 	return {Row = r, Refresh = draw}
 end
-local function UI_Dropdown(parent, text, options, get, set)
+function UI_Dropdown(parent, text, options, get, set)
 	local r = New("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = nextLO(), Parent = parent})
 	List(r, 3)
 	local head = New("TextButton", {Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 0.15, Text = "", LayoutOrder = 1, Parent = r})
@@ -526,13 +534,13 @@ local function UI_Dropdown(parent, text, options, get, set)
 	end)
 	return {Row = r, Refresh = function() cur.Text = tostring(get()) end}
 end
-local function UI_Button(parent, text, cb)
+function UI_Button(parent, text, cb)
 	local b = Btn({Size = UDim2.new(1, 0, 0, 34), Text = text, LayoutOrder = nextLO(), BackgroundTransparency = 0.15, Parent = parent}, "panel2", "accent")
 	corner(b, 0.8); stroke(b, 0.55); hover(b, 0, 0.15)
 	b.MouseButton1Click:Connect(cb)
 	return b
 end
-local function MiniBtn(parent, text, active, cb)
+function MiniBtn(parent, text, active, cb)
 	local b = New("TextButton", {AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 26), Text = text, Font = Enum.Font.GothamMedium,
 		TextSize = 12, BackgroundTransparency = 0, LayoutOrder = nextLO(), Parent = parent})
 	corner(b, 0.6); padding(b, 10, 0, 10, 0); stroke(b, 0.6)
@@ -543,7 +551,7 @@ local function MiniBtn(parent, text, active, cb)
 end
 
 -- Color Picker (aufklappbar): get() -> "#RRGGBB", set(hex, final)
-local function UI_Color(parent, text, get, set)
+function UI_Color(parent, text, get, set)
 	local r = New("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = nextLO(), Parent = parent})
 	List(r, 3)
 	local head = New("TextButton", {Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 0.15, Text = "", LayoutOrder = 1, Parent = r})
@@ -651,7 +659,7 @@ Lib.UI = {Section = UI_Section, Text = UI_Text, Toggle = UI_Toggle, Slider = UI_
 ---------------------------------------------------------------------------------------------------
 local NotifHolder, NotifLayout
 local NotifList = {}
-local function applyNotifPos()
+function applyNotifPos()
 	if not NotifHolder then return end
 	local p = S.notifPos or "TopRight"
 	local right, bottom = p:find("Right") ~= nil, p:find("Bottom") ~= nil
@@ -702,8 +710,8 @@ local Commands, CommandList = {}, {}
 local History = Data.history
 
 local DEF_ST = {keybind = "", mode = "Tap", args = {}, autostart = false, notify = true, hidden = false, fav = false, custom = {}}
-local function csr(cmd) return Data.commands[cmd.Name] or DEF_ST end          -- nur lesen
-local function cs(cmd)                                                         -- lesen + anlegen
+function csr(cmd) return Data.commands[cmd.Name] or DEF_ST end          -- nur lesen
+function cs(cmd)                                                         -- lesen + anlegen
 	local t = Data.commands[cmd.Name]
 	if not t then
 		t = {keybind = "", mode = "Tap", args = {}, autostart = false, notify = true, hidden = false, fav = false, custom = {}}
@@ -712,12 +720,12 @@ local function cs(cmd)                                                         -
 	t.args = t.args or {}; t.custom = t.custom or {}
 	return t
 end
-local function effArg(cmd, i)
+function effArg(cmd, i)
 	local v = csr(cmd).args and csr(cmd).args[tostring(i)]
 	if v ~= nil then return v end
 	return cmd.Args[i].Default
 end
-local function findPlayer(q)
+function findPlayer(q)
 	q = tostring(q):lower()
 	if q == "me" then return LP end
 	local list = Players:GetPlayers()
@@ -726,7 +734,7 @@ local function findPlayer(q)
 	for _, p in ipairs(list) do if p.Name:lower():sub(1, #q) == q or p.DisplayName:lower():sub(1, #q) == q then return p end end
 	for _, p in ipairs(list) do if p.Name:lower():find(q, 1, true) or p.DisplayName:lower():find(q, 1, true) then return p end end
 end
-local function coerce(def, tok)
+function coerce(def, tok)
 	local t = def.Type or "string"
 	if t == "number" or t == "integer" then
 		local n = tonumber(tok)
@@ -747,27 +755,27 @@ local function coerce(def, tok)
 	end
 	return tok
 end
-local function typeLabel(def)
+function typeLabel(def)
 	local t = def.Type or "string"
 	if t == "boolean" then return "true|false" end
 	return t
 end
 
 -- eigene Command-Settings (Settings = {...} im Command)
-local function convertSetting(def, v)
+function convertSetting(def, v)
 	if def.Type == "color" then
 		local ok, c = pcall(Color3.fromHex, tostring(v))
 		return ok and c or Color3.new(1, 1, 1)
 	end
 	return v
 end
-local function settingValue(cmd, def)
+function settingValue(cmd, def)
 	local st = csr(cmd)
 	local v = st.custom and st.custom[def.Key]
 	if v == nil then v = def.Default end
 	return v
 end
-local function buildCfg(cmd)
+function buildCfg(cmd)
 	local cfg = {}
 	for _, def in ipairs(cmd.Settings or {}) do
 		if def.Key then cfg[def.Key] = convertSetting(def, settingValue(cmd, def)) end
@@ -795,7 +803,7 @@ function Lib:AddCommand(def)
 	return cmd
 end
 
-local function addHistory(text)
+function addHistory(text)
 	for i = #History, 1, -1 do if History[i] == text then table.remove(History, i) end end
 	table.insert(History, 1, text)
 	while #History > 30 do table.remove(History) end
@@ -877,7 +885,7 @@ function Lib:Panic()
 	notify("Panic", "Alle Toggle-Commands wurden ausgeschaltet")
 end
 
-local function searchCommands(q)
+function searchCommands(q)
 	q = q:lower()
 	local res = {}
 	for _, cmd in ipairs(CommandList) do
@@ -898,7 +906,7 @@ local function searchCommands(q)
 end
 
 -- Profile anwenden: Settings + ALLE Command-Settings; unbekannte Commands werden gemeldet und uebersprungen
-local function applyProfile(p)
+function applyProfile(p)
 	local missing = {}
 	local src = p.settings
 	if not src then
@@ -918,7 +926,7 @@ local function applyProfile(p)
 	end
 	return missing
 end
-local function reportMissing(profileName, missing)
+function reportMissing(profileName, missing)
 	if #missing == 0 then return end
 	warn("[NeonCmd] Profil '" .. profileName .. "': Commands nicht gefunden (übersprungen): " .. table.concat(missing, ", "))
 	notify("Profil '" .. profileName .. "'", #missing .. " Command(s) nicht gefunden – übersprungen:\n" .. table.concat(missing, ", "), "error")
@@ -944,12 +952,12 @@ end
 local Events, EventList = {}, {}
 local Bus = {}
 local FPS = 60
-local function busOn(name, fn)
+function busOn(name, fn)
 	Bus[name] = Bus[name] or {}
 	local t = Bus[name]; t[#t + 1] = fn
 	return function() for i, f in ipairs(t) do if f == fn then table.remove(t, i) break end end end
 end
-local function busEmit(name, ...)
+function busEmit(name, ...)
 	local t = Bus[name]; if not t then return end
 	for i = 1, #t do if t[i] then task.spawn(t[i], ...) end end
 end
@@ -960,18 +968,18 @@ function Lib:AddEvent(def)
 	EventList[#EventList + 1] = def
 end
 
-local function myHum() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
-local function myRoot() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
-local function speedOf()
+function myHum() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
+function myRoot() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
+function speedOf()
 	local r = myRoot(); if not r then return 0 end
 	local v = r.AssemblyLinearVelocity
 	return Vector3.new(v.X, 0, v.Z).Magnitude
 end
-local function getPing()
+function getPing()
 	local ok, v = pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
 	return ok and v or 0
 end
-local function withHumanoid(setup)
+function withHumanoid(setup)
 	local conns, dead = {}, false
 	local function add(c) conns[#conns + 1] = c end
 	local function attach(char)
@@ -984,13 +992,13 @@ local function withHumanoid(setup)
 	if LP.Character then attach(LP.Character) end
 	return function() dead = true; for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end end
 end
-local function simpleSignal(getSignal)
+function simpleSignal(getSignal)
 	return function(_, fire)
 		local c = getSignal(fire)
 		return function() c:Disconnect() end
 	end
 end
-local function nearestDist()
+function nearestDist()
 	local r = myRoot(); if not r then return math.huge end
 	local best = math.huge
 	for _, p in ipairs(Players:GetPlayers()) do
@@ -1001,10 +1009,10 @@ local function nearestDist()
 	end
 	return best
 end
-local function nameMatch(plr, q) q = tostring(q):lower() return plr.Name:lower():find(q, 1, true) or plr.DisplayName:lower():find(q, 1, true) end
+function nameMatch(plr, q) q = tostring(q):lower() return plr.Name:lower():find(q, 1, true) or plr.DisplayName:lower():find(q, 1, true) end
 
-local function pollEv(id, name, desc, param, check) Lib:AddEvent({Id = id, Name = name, Description = desc, Param = param, Kind = "poll", Check = check}) end
-local function sigEv(id, name, desc, param, connect) Lib:AddEvent({Id = id, Name = name, Description = desc, Param = param, Kind = "signal", Connect = connect}) end
+function pollEv(id, name, desc, param, check) Lib:AddEvent({Id = id, Name = name, Description = desc, Param = param, Kind = "poll", Check = check}) end
+function sigEv(id, name, desc, param, connect) Lib:AddEvent({Id = id, Name = name, Description = desc, Param = param, Kind = "signal", Connect = connect}) end
 local NUM = function(label, default) return {Label = label, Type = "number", Default = default} end
 local STR = function(label, default) return {Label = label, Type = "string", Default = default} end
 
@@ -1152,7 +1160,7 @@ function restartTriggers()
 		end
 	end
 end
-local function pollTriggers()
+function pollTriggers()
 	for _, t in ipairs(PollList) do
 		local ok, v = pcall(t.ev.Check, t.p, t.st)
 		v = (ok and v) and true or false
@@ -1168,7 +1176,7 @@ local BGLayer, ParticleHolder, GradFrame, Grad, ScanBand, PulseFrame, PulseStrok
 local Particles, Tm = {}, 0
 local NSK = NumberSequenceKeypoint.new
 
-local function buildBg()
+function buildBg()
 	BGLayer = New("Frame", {Name = "BG", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 0, ClipsDescendants = true, Parent = Win})
 	-- Gradient Flow
 	GradFrame = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), Visible = false, Parent = BGLayer})
@@ -1206,7 +1214,7 @@ function setBgMode(mode)
 		if mode == "Rain" then p.f.Size = UDim2.fromOffset(1, p.s * 6) else p.f.Size = UDim2.fromOffset(p.s, p.s) end
 	end
 end
-local function bgStep(dt)
+function bgStep(dt)
 	if not (Win and Win.Visible) or S.perfMode then return end
 	local mode, sp = S.bgAnim, S.animSpeed
 	if mode == "None" then return end
@@ -1244,10 +1252,10 @@ end
 local Semi = {Focused = false, Hover = false}
 local LastActive = os.clock()
 local Blur
-local function touch() LastActive = os.clock() end
+function touch() LastActive = os.clock() end
 Lib.Touch = touch
 
-local function setBlur(on)
+function setBlur(on)
 	if not Blur then return end
 	tw(Blur, 0.4, {Size = (on and S.blur) and 14 or 0})
 end
@@ -1256,11 +1264,11 @@ function setState(s)
 	touch()
 	refreshSemi()
 end
-local function targetPos()
+function targetPos()
 	if S.fullscreen then return UDim2.fromScale(0.5, 0.5) end
 	return UDim2.fromScale(S.winX, S.winY)
 end
-local function hiddenPos()
+function hiddenPos()
 	local t = targetPos()
 	return UDim2.new(t.X.Scale, 0, -0.7, 0)
 end
@@ -1331,7 +1339,7 @@ function refreshSemi()
 	end
 end
 
-local function Chip(parent, text, top, onClick)
+function Chip(parent, text, top, onClick)
 	local b = New("TextButton", {AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 26), Text = text, Font = Enum.Font.Code, TextSize = 13,
 		BackgroundTransparency = 0.1, LayoutOrder = nextLO(), Parent = parent})
 	themed(b, {BackgroundColor3 = "panel", TextColor3 = top and "accent" or "text"})
@@ -1339,7 +1347,7 @@ local function Chip(parent, text, top, onClick)
 	b.MouseButton1Click:Connect(onClick)
 	return b
 end
-local function renderPanel()
+function renderPanel()
 	clearKids(Semi.Left); clearKids(Semi.Right)
 	for i, s in ipairs(Suggestions) do
 		if i > S.maxSuggest then break end
@@ -1355,16 +1363,16 @@ local function renderPanel()
 		end)
 	end
 end
-local function argHint(cmd, i)
+function argHint(cmd, i)
 	local d = cmd.Args[i]
 	return "<" .. d.Name .. ": " .. typeLabel(d) .. ">"
 end
-local function defaultsString(cmd)
+function defaultsString(cmd)
 	local parts = {}
 	for i, d in ipairs(cmd.Args) do parts[#parts + 1] = d.Name .. "=" .. tostring(effArg(cmd, i)) end
 	return table.concat(parts, ", ")
 end
-local function updateSuggestions()
+function updateSuggestions()
 	local text = Semi.Box.Text
 	local first = text:match("^%s*(%S*)") or ""
 	local hasSpace = text:find("^%s*%S+%s") ~= nil
@@ -1404,7 +1412,7 @@ local function updateSuggestions()
 	renderPanel()
 end
 
-local function acceptTop()
+function acceptTop()
 	local top = Suggestions[1]
 	if top and S.tabComplete and not Semi.Box.Text:find("^%s*%S+%s") then
 		Semi.Box.Text = top.name .. (#top.cmd.Args > 0 and " " or "")
@@ -1412,7 +1420,7 @@ local function acceptTop()
 	end
 end
 
-local function buildSemi()
+function buildSemi()
 	local root = New("Frame", {Name = "Semi", AnchorPoint = Vector2.new(0.5, 0), Size = UDim2.fromOffset(S.semiWidth, 40), Position = UDim2.new(0.5, 0, S.semiY / 100, 0),
 		BackgroundTransparency = 1, Visible = false, Parent = Gui})
 	Semi.Root = root
@@ -1505,7 +1513,7 @@ function applyWindowMode(setPos)
 	if WinCorner then WinCorner.CornerRadius = S.fullscreen and UDim.new(0, 0) or UDim.new(0, math.floor(S.corner * 1.5)) end
 end
 
-local function buildWindow()
+function buildWindow()
 	Win = New("Frame", {Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(S.winW, S.winH), Position = UDim2.fromScale(S.winX, S.winY),
 		BackgroundTransparency = S.windowTransparency, ClipsDescendants = true, Visible = false, Parent = Gui})
 	themed(Win, {BackgroundColor3 = "bg"}); WinCorner = corner(Win, 1.5); WinStroke = stroke(Win, 0.35)
@@ -1578,7 +1586,7 @@ local CmdFilter, CatFilter = "", "Alle"
 local CmdRows, SelectedCmd = {}, nil
 Lib._rows = CmdRows
 
-local function reorderRows()
+function reorderRows()
 	for i, cmd in ipairs(CommandList) do if CmdRows[cmd] then CmdRows[cmd].row.LayoutOrder = i end end
 end
 function applyCmdFilter()
@@ -1634,7 +1642,7 @@ function refreshRow(cmd, instant)
 	r.badge.Text = ((st.keybind ~= "") and ("[" .. st.keybind .. "]") or "") .. (cmd.Toggle and (on and "  ● AN" or "  ○ AUS") or "")
 	r.badge.Visible = S.showBadges
 end
-local function layoutRow(cmd)
+function layoutRow(cmd)
 	local r = CmdRows[cmd]; if not r then return end
 	if S.showDesc then
 		r.row.Size = UDim2.new(1, 0, 0, 46)
@@ -1645,18 +1653,18 @@ local function layoutRow(cmd)
 	end
 	r.desc.Visible = S.showDesc
 end
-local function flashRow(cmd)
+function flashRow(cmd)
 	local r = CmdRows[cmd]; if not r then return end
 	r.row.BackgroundColor3 = Current.accent
 	r.row.BackgroundTransparency = 0
 	tw(r.row, 0.35, {BackgroundColor3 = Current.panel2, BackgroundTransparency = 0.15})
 end
-local function argSig(cmd)
+function argSig(cmd)
 	local p = {}
 	for _, d in ipairs(cmd.Args) do p[#p + 1] = "<" .. d.Name .. ">" end
 	return #p > 0 and ("  " .. table.concat(p, " ")) or ""
 end
-local function buildCommandRow(cmd)
+function buildCommandRow(cmd)
 	if CmdRows[cmd] or not CmdList then return end
 	local row = New("TextButton", {Size = UDim2.new(1, 0, 0, 46), BackgroundTransparency = 0.15, Text = "", Parent = CmdList})
 	corner(row, 0.8)
@@ -1686,7 +1694,7 @@ function closeCommandSettings()
 	task.delay(0.36, function() if not SelectedCmd then CmdDivider.Visible = false; CmdPanel.Visible = false end end)
 end
 
-local function renderCmdSettingDef(sc, cmd, def, st)
+function renderCmdSettingDef(sc, cmd, def, st)
 	local t = def.Type
 	local key = def.Key
 	local function get() local v = st.custom[key]; if v == nil then v = def.Default end return v end
@@ -1763,7 +1771,7 @@ function openCommandSettings(cmd)
 	UI_Button(sc, "Schließen", closeCommandSettings)
 end
 
-local function buildCommandsTab(page)
+function buildCommandsTab(page)
 	local header = New("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = page})
 	local box = New("TextBox", {Size = UDim2.new(1, -120, 1, 0), Text = "", PlaceholderText = "Commands filtern…   (Rechtsklick auf einen Command = Settings)", ClearTextOnFocus = false,
 		Font = Enum.Font.Gotham, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 0.15, Parent = header})
@@ -1786,7 +1794,7 @@ end
 -- Tab: Game
 ---------------------------------------------------------------------------------------------------
 local GameRows = {}
-local function buildGameTab(page)
+function buildGameTab(page)
 	local sc = Scroll({Size = UDim2.fromScale(1, 1), Parent = page}); List(sc, 5); padding(sc, 0, 0, 6, 0)
 	UI_Text(sc, "Klick auf eine Zeile kopiert nur diesen einen Wert.")
 	local info = {}
@@ -1847,13 +1855,13 @@ local PlayersList, PlayersCount
 local ThumbCache, Highlights = {}, {}
 local Spectating, SpecConn
 
-local function stopSpectate()
+function stopSpectate()
 	if SpecConn then SpecConn:Disconnect(); SpecConn = nil end
 	Spectating = nil
 	local h = myHum()
 	if h and workspace.CurrentCamera then workspace.CurrentCamera.CameraSubject = h end
 end
-local function startSpectate(plr)
+function startSpectate(plr)
 	stopSpectate(); Spectating = plr
 	local function apply()
 		local c = plr.Character
@@ -1863,7 +1871,7 @@ local function startSpectate(plr)
 	apply()
 	SpecConn = plr.CharacterAdded:Connect(function() task.wait(0.5); if Spectating == plr then apply() end end)
 end
-local function toggleHighlight(plr)
+function toggleHighlight(plr)
 	local h = Highlights[plr]
 	if h then h.hl:Destroy(); h.conn:Disconnect(); Highlights[plr] = nil return end
 	local hl = Instance.new("Highlight")
@@ -1915,7 +1923,7 @@ function refreshPlayers()
 	PlayersList.CanvasPosition = pos
 end
 
-local function buildPlayersTab(page)
+function buildPlayersTab(page)
 	local header = New("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = page})
 	PlayersCount = Label({Text = "Spieler", Font = Enum.Font.GothamBold, Size = UDim2.new(1, -140, 1, 0), Parent = header}, "accent")
 	local b = Btn({Size = UDim2.new(0, 130, 1, 0), Position = UDim2.new(1, -130, 0, 0), Text = "↻ Aktualisieren", Parent = header}, "panel2", "accent")
@@ -1937,12 +1945,12 @@ local QTList, QTEditor, QTScroll, QTPicker, PickList, PickSearch
 local PickOnPick, PickFilter = nil, ""
 local StepTypes = {command = "Command", wait = "Warten (s)", notify = "Notify", tool = "Quick Tool"}
 
-local function newTool()
+function newTool()
 	return {id = HttpService:GenerateGUID(false), name = "", keybind = "", mode = "Tap", type = "payload", steps = {}, code = "", triggers = {}, cooldown = 1, enabled = true}
 end
-local function closeEditor() QTEditor.Visible = false; QTPicker.Visible = false end
+function closeEditor() QTEditor.Visible = false; QTPicker.Visible = false end
 
-local function fillPicker()
+function fillPicker()
 	if not PickList then return end
 	clearKids(PickList)
 	local q = PickFilter:lower()
@@ -1958,13 +1966,13 @@ local function fillPicker()
 		end
 	end
 end
-local function showPicker(cb)
+function showPicker(cb)
 	PickOnPick = cb; PickFilter = ""; PickSearch.Text = ""
 	fillPicker()
 	QTPicker.Visible = true
 end
 
-local function openEditor(tool, isNew)
+function openEditor(tool, isNew)
 	local w = deepcopy(tool)
 	local codeBox
 	QTEditor.Visible = true; QTPicker.Visible = false
@@ -2077,7 +2085,7 @@ function refreshQTList()
 	end
 end
 
-local function buildQuickToolsTab(page)
+function buildQuickToolsTab(page)
 	local header = New("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = page})
 	Label({Text = "Quick Tools – Keybind, Payload oder Code, plus Event-Trigger", Size = UDim2.new(1, -180, 1, 0), Parent = header}, "sub")
 	local b = Btn({Size = UDim2.new(0, 170, 1, 0), Position = UDim2.new(1, -170, 0, 0), Text = "+ Neues Quick Tool", Parent = header}, "panel2", "accent")
@@ -2107,7 +2115,7 @@ local SettingsSections, SettingsCur = {}, "Aussehen"
 local SettingsSide, SettingsScroll
 local ProfSel, ProfNew = ActiveProfile, ""
 
-local function profileNames()
+function profileNames()
 	local t = {}
 	for n in pairs(Data.profiles) do t[#t + 1] = n end
 	table.sort(t)
@@ -2126,21 +2134,21 @@ function applyAppearance(instant)
 	save()
 end
 
-local function SL(sc, text, min, max, step, key, suffix, fn, deferred)
+function SL(sc, text, min, max, step, key, suffix, fn, deferred)
 	return UI_Slider(sc, text, min, max, step, function() return S[key] end, function(v) S[key] = v; if fn then fn(v) end save() end, suffix, deferred)
 end
-local function TG(sc, text, key, fn)
+function TG(sc, text, key, fn)
 	return UI_Toggle(sc, text, function() return S[key] end, function(v) S[key] = v; if fn then fn(v) end save() end)
 end
-local function DD(sc, text, opts, key, fn)
+function DD(sc, text, opts, key, fn)
 	return UI_Dropdown(sc, text, opts, function() return S[key] end, function(v) S[key] = v; if fn then fn(v) end save() end)
 end
-local function KB(sc, text, key, default)
+function KB(sc, text, key, default)
 	return UI_Keybind(sc, text, function() return S[key] end, function(v) S[key] = (v ~= "" or not default) and v or default; save() end)
 end
-local function reapply() applyAppearance(false) end
+function reapply() applyAppearance(false) end
 
-local function addSection(name, build) SettingsSections[#SettingsSections + 1] = {name = name, build = build} end
+function addSection(name, build) SettingsSections[#SettingsSections + 1] = {name = name, build = build} end
 
 addSection("Aussehen", function(sc)
 	UI_Section(sc, "Theme")
@@ -2339,7 +2347,7 @@ function Lib._renderSidebar()
 	end
 end
 
-local function buildSettingsTab(page)
+function buildSettingsTab(page)
 	SettingsSide = Scroll({Size = UDim2.new(0, 160, 1, 0), Parent = page}); List(SettingsSide, 4); padding(SettingsSide, 0, 0, 6, 0)
 	local div = New("Frame", {Position = UDim2.fromOffset(166, 0), Size = UDim2.new(0, 1, 1, 0), BackgroundTransparency = 0.7, Parent = page})
 	themed(div, {BackgroundColor3 = "accent"})
@@ -2352,8 +2360,8 @@ end
 -- Eingaben (Keybinds, Open/Focus, Tab, Escape)
 ---------------------------------------------------------------------------------------------------
 local Held = {}
-local function flip(cmd) if cmd.Toggle then return not cmd.On end return nil end
-local function handleBinds(kn, down)
+function flip(cmd) if cmd.Toggle then return not cmd.On end return nil end
+function handleBinds(kn, down)
 	for _, cmd in ipairs(CommandList) do
 		local st = Data.commands[cmd.Name]
 		if st and st.keybind == kn then
@@ -2377,7 +2385,7 @@ local function handleBinds(kn, down)
 	end
 end
 
-local function connectInput()
+function connectInput()
 	track(UIS.InputBegan:Connect(function(input, gpe)
 		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 		if Semi.Box and Semi.Box:IsFocused() then
@@ -2597,7 +2605,7 @@ end
 ---------------------------------------------------------------------------------------------------
 -- Ladescreen (animierter Ring, Shimmer-Balken, Schritt-Log)
 ---------------------------------------------------------------------------------------------------
-local function runLoader(steps)
+function runLoader(steps)
 	local dim = New("Frame", {Name = "Dim", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, ZIndex = 50, Active = true, Parent = Gui})
 	local card = New("CanvasGroup", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.54), Size = UDim2.fromOffset(460, 288), GroupTransparency = 1, ZIndex = 51, Parent = dim})
 	themed(card, {BackgroundColor3 = "panel"}); corner(card, 1.7); stroke(card, 0.3)
