@@ -1,5 +1,5 @@
 --[[
-	NeonCmd UI Library  v1.1.1
+	NeonCmd UI Library  v1.1.2
 	Command-UI fuer Roblox Executor (Luau). Laeuft komplett in gethui() / CoreGui.
 
 	KURZ-ANLEITUNG (ausfuehrlich: NeonCmd_Anleitung.md)
@@ -1832,7 +1832,7 @@ local function buildGameTab(page)
 		end)
 	end
 end
-local function updateGameRows()
+function updateGameRows()
 	for _, r in ipairs(GameRows) do
 		local ok, v = pcall(r.get)
 		local s = ok and tostring(v) or "?"
