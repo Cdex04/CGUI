@@ -1,31 +1,36 @@
 --[[
-	NeonCmd UI Library  v1.0
-	Command-UI fuer Roblox Executor (Luau). Alles laeuft in CoreGui / gethui().
+	NeonCmd UI Library  v1.1
+	Command-UI fuer Roblox Executor (Luau). Laeuft komplett in gethui() / CoreGui.
 
-	VERWENDUNG
-		local Lib = loadstring(readfile("NeonCmd.lua"))()   -- oder loadstring(game:HttpGet("..."))()
+	KURZ-ANLEITUNG (ausfuehrlich: NeonCmd_Anleitung.md)
+
+		local Lib = loadstring(readfile("NeonCmd.lua"))()
 
 		Lib:AddCommand({
 			Name = "fov", Aliases = {"fieldofview"}, Category = "Camera",
 			Description = "Setzt das Field of View",
-			Toggle = false,                                  -- true = an/aus Command
+			Toggle = false,                                   -- true = an/aus Command
 			Args = {{Name = "size", Type = "number", Default = 70, Min = 1, Max = 120}},
-			Callback = function(args, on)                    -- args.size / args[1]; on nur bei Toggle
+			Settings = {                                      -- eigene Command-Settings (Rechtsklick)
+				{Type = "slider", Key = "smooth", Name = "Smooth", Min = 0, Max = 1, Step = 0.05, Default = 0.3},
+				{Type = "color",  Key = "tint",   Name = "Farbe",  Default = "#00B2FF"},
+			},
+			Callback = function(args, on, cfg)                -- args.size | on (nur Toggle) | cfg.smooth, cfg.tint
 				workspace.CurrentCamera.FieldOfView = args.size
 			end,
 		})
 
-		Lib:AddEvent({ Id="my_event", Name="Mein Event", Description="...", Kind="signal",
-			Param = {Label="Wert", Type="number", Default=1},
-			Connect = function(param, fire) local c = someSignal:Connect(fire) return function() c:Disconnect() end end })
+		Lib:AddSettingsSection("Mein Script", function(parent, UI)   -- eigener Bereich im Settings-Tab
+			UI.Toggle(parent, "Irgendwas", function() return true end, function(v) print(v) end)
+		end)
 
 		Lib:Start({Name = "NeonCmd", DefaultCommands = true})
 
 	BEDIENUNG
-		Rechts-Shift ........ grosses Fenster (kommt von oben)
-		Rechts-Strg ......... Suchleiste fokussieren (Tasten sind in den Settings aenderbar)
-		Tab ................. Top-Vorschlag uebernehmen   |   Enter ... Command ausfuehren
-		Linksklick auf Command = ausfuehren / toggeln   |   Rechtsklick = Command-Settings
+		Rechts-Shift ........ Fenster oeffnen/schliessen        Rechts-Strg ... Suchleiste fokussieren
+		Tab ................. Top-Vorschlag uebernehmen          Enter ......... Command ausfuehren
+		Linksklick auf Command = ausfuehren/toggeln              Rechtsklick ... Command-Settings
+		Titelleiste ziehen = Fenster verschieben                 Fullscreen-Button oben rechts / Settings
 ]]
 
 ---------------------------------------------------------------------------------------------------
@@ -42,7 +47,7 @@ local LP = Players.LocalPlayer
 local genv = (getgenv and getgenv()) or _G
 if genv.__NeonCmd and genv.__NeonCmd.Unload then pcall(function() genv.__NeonCmd:Unload() end) end
 
-local Lib = {Version = "1.0.0", Name = "NeonCmd", Built = false}
+local Lib = {Version = "1.1.0", Name = "NeonCmd", Built = false}
 genv.__NeonCmd = Lib
 
 ---------------------------------------------------------------------------------------------------
@@ -70,7 +75,12 @@ local function parseHex(s)
 	s = tostring(s):gsub("#", "")
 	if #s == 6 and s:match("^%x+$") then return "#" .. s:upper() end
 end
+-- t <= 0 setzt direkt (kein Tween-Objekt -> performanter)
 local function tw(o, t, props, style, dir)
+	if not t or t <= 0 then
+		for k, v in pairs(props) do o[k] = v end
+		return
+	end
 	local tween = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out), props)
 	tween:Play()
 	return tween
@@ -80,12 +90,13 @@ local function nextLO() LOc = LOc + 1 return LOc end
 
 local Connections = {}
 local function track(c) Connections[#Connections + 1] = c return c end
+-- Verbindung die automatisch endet, wenn die Instanz zerstoert wird (fuer Komponenten)
 local function bind(inst, signal, fn)
 	local c = signal:Connect(fn)
-	Connections[#Connections + 1] = c
 	inst.Destroying:Connect(function() c:Disconnect() end)
 	return c
 end
+local function mousePos() return UIS:GetMouseLocation() end
 
 local function clip(text)
 	if setclipboard then pcall(setclipboard, text) return true end
@@ -116,6 +127,7 @@ end
 ---------------------------------------------------------------------------------------------------
 local Themes, ThemeOrder = {}, {}
 local THEME_KEYS = {"bg", "panel", "panel2", "accent", "text", "sub"}
+local THEME_LABELS = {bg = "Hintergrund", panel = "Panel", panel2 = "Zeilen / Felder", accent = "Akzent (Neon)", text = "Text", sub = "Subtext"}
 local function addTheme(name, bg, panel, panel2, accent, text, sub)
 	Themes[name] = {bg = bg, panel = panel, panel2 = panel2, accent = accent, text = text, sub = sub}
 	ThemeOrder[#ThemeOrder + 1] = name
@@ -125,7 +137,7 @@ addTheme("Crimson",     "#070405", "#0F0809", "#1A0E10", "#FF2A4D", "#FF7A90", "
 addTheme("Toxic Green", "#040704", "#080E08", "#0F1A0F", "#39FF14", "#8CFF73", "#28B80E")
 addTheme("Violet",      "#06040A", "#0D0914", "#160F22", "#B44CFF", "#D09BFF", "#8431C2")
 addTheme("Sunset",      "#080504", "#0F0A07", "#1A120D", "#FF7A18", "#FFAB66", "#C25A0E")
-addTheme("Ice",        "#04070A", "#080F14", "#0F1A22", "#7DF9FF", "#B5FBFF", "#4FBDC2")
+addTheme("Ice",         "#04070A", "#080F14", "#0F1A22", "#7DF9FF", "#B5FBFF", "#4FBDC2")
 addTheme("Gold",        "#080703", "#0F0D06", "#1A170C", "#FFD21F", "#FFE375", "#BD9A0E")
 addTheme("Rose",        "#090407", "#120A0F", "#1D1019", "#FF5FA2", "#FF9CC4", "#C23C74")
 addTheme("Mint",        "#030807", "#07110E", "#0D1D18", "#2DFFB3", "#8CFFD6", "#1EB880")
@@ -137,17 +149,26 @@ addTheme("Magenta",     "#090409", "#120812", "#1E101E", "#FF00E5", "#FF80F2", "
 local BG_MODES = {"None", "Particles", "Rain", "Gradient Flow", "Scanline", "Pulse Glow"}
 
 ---------------------------------------------------------------------------------------------------
--- Settings / Daten
+-- Settings / Daten / Profile
 ---------------------------------------------------------------------------------------------------
 local DEFAULTS = {
+	-- Aussehen
 	theme = "Neon Blue", bgAnim = "Particles", animSpeed = 1, windowTransparency = 0.04,
 	uiScale = 1, corner = 8, blur = false,
-	openKey = "RightShift", focusKey = "RightControl", panicKey = "",
-	idleHide = 30, semiIdle = 0.6, semiY = 80, semiWidth = 460, animDur = 0.5,
+	-- Fenster
+	fullscreen = false, winX = 0.5, winY = 0.5, winW = 840, winH = 540, escClose = false, tabAnim = true, animDur = 0.5,
+	openKey = "RightShift", focusKey = "RightControl", panicKey = "", startState = "Semi", rememberTab = true, lastTab = "Commands",
+	-- Suchleiste
+	idleHide = 30, semiIdle = 0.6, semiY = 80, semiWidth = 460, searchFont = 16,
 	maxSuggest = 8, maxHistory = 6, tabComplete = true, ghostText = true, substring = true,
-	notif = true, notifDuration = 4, notifPos = "TopRight",
-	showDesc = true, autoStart = true, rememberTab = true, lastTab = "Commands", startState = "Semi",
-	startProfile = "Default", autoSaveProfile = false,
+	-- Commands
+	showDesc = true, showBadges = true, autoStart = true, notifyCommands = true,
+	-- Benachrichtigungen
+	notif = true, notifDuration = 4, notifPos = "TopRight", notifMax = 5,
+	-- Performance
+	perfMode = false, bgFps = 40, particles = 28,
+	-- Profile
+	startProfile = "Default", autoSaveProfile = true,
 }
 DEFAULTS.customTheme = deepcopy(Themes["Neon Blue"])
 
@@ -155,19 +176,24 @@ local Data = {commands = {}, quicktools = {}, history = {}, profiles = {}, setti
 local S = Data.settings
 fillMissing(S, DEFAULTS)
 
-local APPEARANCE = {"theme", "bgAnim", "animSpeed", "windowTransparency", "uiScale", "corner", "blur", "customTheme"}
+local PROFILE_SKIP = {startProfile = true, lastTab = true, winX = true, winY = true}
 local ActiveProfile = "Default"
+
+local function snapshotProfile()
+	local p = {settings = {}, commands = deepcopy(Data.commands)}
+	for k, v in pairs(S) do if not PROFILE_SKIP[k] then p.settings[k] = deepcopy(v) end end
+	return p
+end
 
 local saveQueued = false
 local function save()
 	if saveQueued then return end
 	saveQueued = true
-	task.delay(0.6, function() saveQueued = false; FS.save(Data) end)
-end
-local function snapshotProfile()
-	local p = {}
-	for _, k in ipairs(APPEARANCE) do p[k] = deepcopy(S[k]) end
-	return p
+	task.delay(0.6, function()
+		saveQueued = false
+		if S.autoSaveProfile and Data.profiles[ActiveProfile] then Data.profiles[ActiveProfile] = snapshotProfile() end
+		FS.save(Data)
+	end)
 end
 local function loadData()
 	local d = FS.load()
@@ -183,10 +209,11 @@ local function loadData()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Theme-Engine
+-- Theme-Engine (Registry + weicher Farbuebergang ueber einen einzigen Heartbeat)
 ---------------------------------------------------------------------------------------------------
-local Current = {}
 local Registry, ThemeHooks, Corners = {}, {}, {}
+local Current = {}
+local themeConn
 
 local function resolveTheme()
 	local t = (S.theme == "Custom") and S.customTheme or Themes[S.theme] or Themes["Neon Blue"]
@@ -208,18 +235,38 @@ local function hook(inst, fn)
 	ThemeHooks[#ThemeHooks + 1] = {inst, fn}
 	fn(true)
 end
-local function applyTheme(instant)
-	Current = resolveTheme()
-	local t = instant and 0 or 0.35
-	for i = #Registry, 1, -1 do
+local function prune()
+	for i = #Registry, 1, -1 do if not Registry[i][1].Parent then table.remove(Registry, i) end end
+	for i = #ThemeHooks, 1, -1 do if not ThemeHooks[i][1].Parent then table.remove(ThemeHooks, i) end end
+	for i = #Corners, 1, -1 do if not Corners[i][1].Parent then table.remove(Corners, i) end end
+end
+local function paint(colors)
+	for i = 1, #Registry do
 		local e = Registry[i]
-		if not e[1].Parent then table.remove(Registry, i)
-		else for p, k in pairs(e[2]) do tw(e[1], t, {[p] = Current[k]}) end end
+		if e[1].Parent then for p, k in pairs(e[2]) do e[1][p] = colors[k] end end
 	end
+end
+local function runHooks(instant)
 	for i = #ThemeHooks, 1, -1 do
 		local h = ThemeHooks[i]
-		if not h[1].Parent then table.remove(ThemeHooks, i) else pcall(h[2], instant) end
+		if h[1].Parent then pcall(h[2], instant) end
 	end
+end
+local function applyTheme(instant)
+	local old = Current
+	Current = resolveTheme()
+	prune()
+	if themeConn then themeConn:Disconnect(); themeConn = nil end
+	runHooks(instant)
+	if instant then paint(Current) return end
+	local t0, new = os.clock(), Current
+	themeConn = RunService.Heartbeat:Connect(function()
+		local a = math.min((os.clock() - t0) / 0.3, 1)
+		local mix = {}
+		for _, k in ipairs(THEME_KEYS) do mix[k] = old[k]:Lerp(new[k], a) end
+		paint(mix)
+		if a >= 1 and themeConn then themeConn:Disconnect(); themeConn = nil end
+	end)
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -248,6 +295,7 @@ local function corner(o, m)
 	Corners[#Corners + 1] = {c, m or 1}
 	return c
 end
+local function round_(o) return New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = o}) end
 local function stroke(o, tr, key)
 	local s = Instance.new("UIStroke")
 	s.Thickness = 1; s.Transparency = tr or 0.6
@@ -304,14 +352,16 @@ local function clearKids(f)
 end
 
 -- Forward-Deklarationen
-local Gui, Win, WinStroke, WinScale
+local Gui, Win, WinStroke, WinScale, WinCorner
 local State = "loading"
 local Listening = false
+local Pending = {theme = false}
 local notify, refreshSemi, setState, applyAppearance, refreshRow, openCommandSettings, closeCommandSettings
 local restartTriggers, refreshQTList, refreshPlayers, renderSettings, switchTab, layoutSemi, setBgMode
+local applyWindowMode, applyCmdFilter, rebuildChips, updateCorners
 
 ---------------------------------------------------------------------------------------------------
--- Wiederverwendbare Komponenten (Settings, Command-Settings, Editor)
+-- Wiederverwendbare Komponenten (auch fuer Command-Settings und Addons: Lib.UI)
 ---------------------------------------------------------------------------------------------------
 local function RowBase(parent, h)
 	local r = New("Frame", {Size = UDim2.new(1, 0, 0, h or 38), BackgroundTransparency = 0.15, LayoutOrder = nextLO(), Parent = parent})
@@ -330,54 +380,68 @@ local function UI_Toggle(parent, text, get, set)
 	local r = New("TextButton", {Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 0.15, Text = "", LayoutOrder = nextLO(), Parent = parent})
 	themed(r, {BackgroundColor3 = "panel2"}); corner(r, 0.8)
 	Label({Text = text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -70, 1, 0), Parent = r})
-	local track = New("Frame", {Size = UDim2.fromOffset(40, 20), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), BackgroundTransparency = 0, Parent = r})
-	New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = track}); stroke(track, 0.5)
-	local knob = New("Frame", {Size = UDim2.fromOffset(14, 14), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 3, 0.5, 0), BackgroundTransparency = 0, Parent = track})
-	New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = knob})
+	local track_ = New("Frame", {Size = UDim2.fromOffset(40, 20), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), BackgroundTransparency = 0, Parent = r})
+	round_(track_); stroke(track_, 0.5)
+	local knob = New("Frame", {Size = UDim2.fromOffset(14, 14), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 3, 0.5, 0), BackgroundTransparency = 0, Parent = track_})
+	round_(knob)
 	local function draw(instant)
 		local on = get() and true or false
 		local t = instant and 0 or 0.18
-		tw(track, t, {BackgroundColor3 = on and Current.accent or Current.bg})
+		tw(track_, t, {BackgroundColor3 = on and Current.accent or Current.bg})
 		tw(knob, t, {Position = on and UDim2.new(1, -17, 0.5, 0) or UDim2.new(0, 3, 0.5, 0), BackgroundColor3 = on and Current.bg or Current.sub})
 	end
 	hook(r, draw)
 	r.MouseButton1Click:Connect(function() set(not get()); draw(false) end)
 	return {Row = r, Refresh = draw}
 end
-local function UI_Slider(parent, text, min, max, step, get, set, suffix)
+-- deferred = true: set() wird erst beim Loslassen aufgerufen (fuer Slider, die das eigene Fenster veraendern)
+local function UI_Slider(parent, text, min, max, step, get, set, suffix, deferred)
 	local r = RowBase(parent, 50)
 	Label({Text = text, Position = UDim2.fromOffset(12, 4), Size = UDim2.new(0.6, 0, 0, 22), Parent = r})
 	local val = Label({Position = UDim2.new(0.6, 0, 0, 4), Size = UDim2.new(0.4, -12, 0, 22), TextXAlignment = Enum.TextXAlignment.Right, Parent = r}, "accent")
-	local track = New("Frame", {Size = UDim2.new(1, -24, 0, 6), Position = UDim2.new(0, 12, 0, 34), BackgroundTransparency = 0, Parent = r})
-	themed(track, {BackgroundColor3 = "bg"}); New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = track})
-	local fill = New("Frame", {Size = UDim2.new(0, 0, 1, 0), BackgroundTransparency = 0, Parent = track})
-	themed(fill, {BackgroundColor3 = "accent"}); New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = fill})
-	local knob = New("Frame", {Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundTransparency = 0, Parent = track})
-	themed(knob, {BackgroundColor3 = "accent"}); New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = knob})
+	local track_ = New("Frame", {Size = UDim2.new(1, -24, 0, 6), Position = UDim2.new(0, 12, 0, 34), BackgroundTransparency = 0, Parent = r})
+	themed(track_, {BackgroundColor3 = "bg"}); round_(track_)
+	local fill = New("Frame", {Size = UDim2.new(0, 0, 1, 0), BackgroundTransparency = 0, Parent = track_})
+	themed(fill, {BackgroundColor3 = "accent"}); round_(fill)
+	local knob = New("Frame", {Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundTransparency = 0, Parent = track_})
+	themed(knob, {BackgroundColor3 = "accent"}); round_(knob)
 	local function render(v)
-		local a = clamp((v - min) / (max - min), 0, 1)
+		v = clamp(v, min, max)
+		local a = (max > min) and (v - min) / (max - min) or 0
 		fill.Size = UDim2.new(a, 0, 1, 0); knob.Position = UDim2.new(a, 0, 0.5, 0)
 		val.Text = tostring(round(v, step)) .. (suffix or "")
 	end
 	render(get())
 	local hit = New("TextButton", {Size = UDim2.new(1, -24, 0, 24), Position = UDim2.new(0, 12, 0, 26), Text = "", BackgroundTransparency = 1, Parent = r})
-	local dragging = false
-	local function fromX(x)
-		local a = clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-		local v = round(min + (max - min) * a, step)
-		set(v); render(v)
+	local dragging, pending, scrollParent = false, nil, nil
+	local function fromMouse()
+		local x = mousePos().X
+		local a = clamp((x - track_.AbsolutePosition.X) / math.max(track_.AbsoluteSize.X, 1), 0, 1)
+		local v = clamp(round(min + (max - min) * a, step), min, max)
+		render(v)
+		if deferred then pending = v else set(v) end
+	end
+	local function finish()
+		if not dragging then return end
+		dragging = false
+		if scrollParent then scrollParent.ScrollingEnabled = true; scrollParent = nil end
+		if pending ~= nil then local v = pending; pending = nil; set(v) end
 	end
 	hit.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-			dragging = true; fromX(i.Position.X)
+			dragging = true
+			local sp = r:FindFirstAncestorOfClass("ScrollingFrame")
+			if sp then scrollParent = sp; sp.ScrollingEnabled = false end
+			fromMouse()
 		end
 	end)
 	bind(r, UIS.InputChanged, function(i)
-		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then fromX(i.Position.X) end
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then fromMouse() end
 	end)
 	bind(r, UIS.InputEnded, function(i)
-		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then finish() end
 	end)
+	r.Destroying:Connect(function() if scrollParent then scrollParent.ScrollingEnabled = true end end)
 	return {Row = r, Refresh = function() render(get()) end}
 end
 local function UI_Input(parent, text, get, set, placeholder, width)
@@ -478,10 +542,115 @@ local function MiniBtn(parent, text, active, cb)
 	return b
 end
 
+-- Color Picker (aufklappbar): get() -> "#RRGGBB", set(hex, final)
+local function UI_Color(parent, text, get, set)
+	local r = New("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = nextLO(), Parent = parent})
+	List(r, 3)
+	local head = New("TextButton", {Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 0.15, Text = "", LayoutOrder = 1, Parent = r})
+	themed(head, {BackgroundColor3 = "panel2"}); corner(head, 0.8)
+	Label({Text = text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -170, 1, 0), Parent = head})
+	local hexLbl = Label({Font = Enum.Font.Code, TextSize = 12, Position = UDim2.new(1, -150, 0, 0), Size = UDim2.fromOffset(86, 38), TextXAlignment = Enum.TextXAlignment.Right, Parent = head}, "sub")
+	local sw = New("Frame", {Size = UDim2.fromOffset(46, 22), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), BackgroundTransparency = 0, Parent = head})
+	corner(sw, 0.5); stroke(sw, 0.3)
+	local panel = New("Frame", {Size = UDim2.new(1, 0, 0, 172), BackgroundTransparency = 0.15, Visible = false, LayoutOrder = 2, Parent = r})
+	themed(panel, {BackgroundColor3 = "panel"}); corner(panel, 0.8)
+
+	local h, s, v = 0, 0, 1
+	local sv = New("Frame", {Position = UDim2.fromOffset(12, 12), Size = UDim2.fromOffset(240, 116), BackgroundColor3 = Color3.new(1, 0, 0), Parent = panel})
+	corner(sv, 0.6)
+	local white = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), Parent = sv})
+	corner(white, 0.6); New("UIGradient", {Transparency = NumberSequence.new(0, 1), Parent = white})
+	local black = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = sv})
+	corner(black, 0.6); New("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = black})
+	local cursor = New("Frame", {Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, Parent = sv})
+	round_(cursor); New("UIStroke", {Thickness = 2, Color = Color3.new(1, 1, 1), Parent = cursor})
+	local svHit = New("TextButton", {Size = UDim2.fromScale(1, 1), Text = "", BackgroundTransparency = 1, Parent = sv})
+
+	local hue = New("Frame", {Position = UDim2.fromOffset(12, 140), Size = UDim2.fromOffset(240, 16), BackgroundColor3 = Color3.new(1, 1, 1), Parent = panel})
+	round_(hue)
+	New("UIGradient", {Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)), ColorSequenceKeypoint.new(1 / 6, Color3.fromHSV(1 / 6, 1, 1)),
+		ColorSequenceKeypoint.new(2 / 6, Color3.fromHSV(2 / 6, 1, 1)), ColorSequenceKeypoint.new(3 / 6, Color3.fromHSV(3 / 6, 1, 1)),
+		ColorSequenceKeypoint.new(4 / 6, Color3.fromHSV(4 / 6, 1, 1)), ColorSequenceKeypoint.new(5 / 6, Color3.fromHSV(5 / 6, 1, 1)),
+		ColorSequenceKeypoint.new(1, Color3.fromHSV(0, 1, 1))}), Parent = hue})
+	local hueCur = New("Frame", {Size = UDim2.fromOffset(5, 22), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = Color3.new(1, 1, 1), Parent = hue})
+	corner(hueCur, 0.3); New("UIStroke", {Thickness = 1, Color = Color3.new(0, 0, 0), Parent = hueCur})
+	local hueHit = New("TextButton", {Size = UDim2.fromScale(1, 1), Text = "", BackgroundTransparency = 1, Parent = hue})
+
+	local prev = New("Frame", {Position = UDim2.fromOffset(270, 12), Size = UDim2.fromOffset(100, 56), BackgroundTransparency = 0, Parent = panel})
+	corner(prev, 0.7); stroke(prev, 0.3)
+	Label({Text = "Hex", TextSize = 11, Position = UDim2.fromOffset(270, 78), Size = UDim2.fromOffset(100, 14), Parent = panel}, "sub")
+	local hexBox = New("TextBox", {Position = UDim2.fromOffset(270, 94), Size = UDim2.fromOffset(100, 26), Text = "", ClearTextOnFocus = false, Font = Enum.Font.Code, TextSize = 13,
+		BackgroundTransparency = 0, Parent = panel})
+	themed(hexBox, {BackgroundColor3 = "bg", TextColor3 = "text"}); corner(hexBox, 0.6); stroke(hexBox, 0.6); padding(hexBox, 6, 0, 6, 0)
+
+	local function load()
+		local ok, c = pcall(Color3.fromHex, tostring(get()))
+		if not ok then c = Color3.new(1, 1, 1) end
+		h, s, v = c:ToHSV()
+	end
+	local function refresh()
+		local c = Color3.fromHSV(h, s, v)
+		local hex = "#" .. c:ToHex():upper()
+		sv.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+		cursor.Position = UDim2.new(s, 0, 1 - v, 0)
+		hueCur.Position = UDim2.new(h, 0, 0.5, 0)
+		prev.BackgroundColor3 = c; sw.BackgroundColor3 = c; hexLbl.Text = hex
+		if not hexBox:IsFocused() then hexBox.Text = hex end
+		return hex
+	end
+	local drag
+	local function update()
+		local m = mousePos()
+		if drag == "sv" then
+			s = clamp((m.X - sv.AbsolutePosition.X) / math.max(sv.AbsoluteSize.X, 1), 0, 1)
+			v = 1 - clamp((m.Y - sv.AbsolutePosition.Y) / math.max(sv.AbsoluteSize.Y, 1), 0, 1)
+		elseif drag == "hue" then
+			h = clamp((m.X - hue.AbsolutePosition.X) / math.max(hue.AbsoluteSize.X, 1), 0, 0.999)
+		end
+		set(refresh(), false)
+	end
+	local function begin(kind, input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			drag = kind
+			local sp = r:FindFirstAncestorOfClass("ScrollingFrame")
+			if sp then sp.ScrollingEnabled = false; r:SetAttribute("sp", true) end
+			update()
+		end
+	end
+	svHit.InputBegan:Connect(function(i) begin("sv", i) end)
+	hueHit.InputBegan:Connect(function(i) begin("hue", i) end)
+	bind(r, UIS.InputChanged, function(i) if drag and i.UserInputType == Enum.UserInputType.MouseMovement then update() end end)
+	bind(r, UIS.InputEnded, function(i)
+		if drag and i.UserInputType == Enum.UserInputType.MouseButton1 then
+			drag = nil
+			local sp = r:FindFirstAncestorOfClass("ScrollingFrame")
+			if sp then sp.ScrollingEnabled = true end
+			set(refresh(), true)
+		end
+	end)
+	hexBox.FocusLost:Connect(function()
+		local hx = parseHex(hexBox.Text)
+		if hx then
+			local c = Color3.fromHex(hx); h, s, v = c:ToHSV(); set(refresh(), true)
+		else hexBox.Text = "#" .. Color3.fromHSV(h, s, v):ToHex():upper() end
+	end)
+	head.MouseButton1Click:Connect(function()
+		panel.Visible = not panel.Visible
+		if panel.Visible then load(); refresh() end
+	end)
+	load(); refresh()
+	return {Row = r, Refresh = function() load(); refresh() end}
+end
+
+Lib.UI = {Section = UI_Section, Text = UI_Text, Toggle = UI_Toggle, Slider = UI_Slider, Input = UI_Input, Keybind = UI_Keybind,
+	Segment = UI_Segment, Dropdown = UI_Dropdown, Button = UI_Button, Color = UI_Color}
+
 ---------------------------------------------------------------------------------------------------
 -- Notifications
 ---------------------------------------------------------------------------------------------------
 local NotifHolder, NotifLayout
+local NotifList = {}
 local function applyNotifPos()
 	if not NotifHolder then return end
 	local p = S.notifPos or "TopRight"
@@ -494,7 +663,12 @@ end
 function notify(title, text, kind)
 	if not S.notif or not NotifHolder then return end
 	local right = (S.notifPos or "TopRight"):find("Right") ~= nil
+	while #NotifList >= S.notifMax do
+		local old = table.remove(NotifList, 1)
+		if old and old.Parent then old:Destroy() end
+	end
 	local wrap = New("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = nextLO(), Parent = NotifHolder})
+	NotifList[#NotifList + 1] = wrap
 	local card = New("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Position = UDim2.new(right and 1.3 or -1.3, 0, 0, 0), BackgroundTransparency = 0.08, Parent = wrap})
 	themed(card, {BackgroundColor3 = "panel"}); corner(card, 1); stroke(card, 0.35)
 	padding(card, 12, 10, 12, 10); List(card, 4)
@@ -514,10 +688,12 @@ function notify(title, text, kind)
 		if not card.Parent then return end
 		tw(card, 0.35, {Position = UDim2.new(right and 1.3 or -1.3, 0, 0, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 		task.wait(0.4)
+		for i, w in ipairs(NotifList) do if w == wrap then table.remove(NotifList, i) break end end
 		wrap:Destroy()
 	end)
 end
 Lib.Notify = function(_, t, x) notify(t, x) end
+Lib.UI.Notify = notify
 
 ---------------------------------------------------------------------------------------------------
 -- Commands: Registry, Ausfuehrung, Settings pro Command
@@ -525,17 +701,19 @@ Lib.Notify = function(_, t, x) notify(t, x) end
 local Commands, CommandList = {}, {}
 local History = Data.history
 
-local function cs(cmd)
+local DEF_ST = {keybind = "", mode = "Tap", args = {}, autostart = false, notify = true, hidden = false, fav = false, custom = {}}
+local function csr(cmd) return Data.commands[cmd.Name] or DEF_ST end          -- nur lesen
+local function cs(cmd)                                                         -- lesen + anlegen
 	local t = Data.commands[cmd.Name]
 	if not t then
-		t = {keybind = "", mode = "Tap", args = {}, autostart = false, notify = true, hidden = false}
+		t = {keybind = "", mode = "Tap", args = {}, autostart = false, notify = true, hidden = false, fav = false, custom = {}}
 		Data.commands[cmd.Name] = t
 	end
-	t.args = t.args or {}
+	t.args = t.args or {}; t.custom = t.custom or {}
 	return t
 end
 local function effArg(cmd, i)
-	local v = cs(cmd).args[tostring(i)]
+	local v = csr(cmd).args and csr(cmd).args[tostring(i)]
 	if v ~= nil then return v end
 	return cmd.Args[i].Default
 end
@@ -575,10 +753,39 @@ local function typeLabel(def)
 	return t
 end
 
+-- eigene Command-Settings (Settings = {...} im Command)
+local function convertSetting(def, v)
+	if def.Type == "color" then
+		local ok, c = pcall(Color3.fromHex, tostring(v))
+		return ok and c or Color3.new(1, 1, 1)
+	end
+	return v
+end
+local function settingValue(cmd, def)
+	local st = csr(cmd)
+	local v = st.custom and st.custom[def.Key]
+	if v == nil then v = def.Default end
+	return v
+end
+local function buildCfg(cmd)
+	local cfg = {}
+	for _, def in ipairs(cmd.Settings or {}) do
+		if def.Key then cfg[def.Key] = convertSetting(def, settingValue(cmd, def)) end
+	end
+	return cfg
+end
+function Lib:GetSetting(name, key)
+	local cmd = Commands[tostring(name):lower()]
+	if not cmd then return nil end
+	for _, def in ipairs(cmd.Settings or {}) do
+		if def.Key == key then return convertSetting(def, settingValue(cmd, def)) end
+	end
+end
+
 function Lib:AddCommand(def)
 	assert(type(def) == "table" and def.Name and def.Callback, "AddCommand: Name und Callback nötig")
 	local cmd = {Name = def.Name:lower(), Aliases = def.Aliases or {}, Description = def.Description or "", Category = def.Category or "General",
-		Toggle = def.Toggle == true, Args = def.Args or {}, Callback = def.Callback, On = false}
+		Toggle = def.Toggle == true, Args = def.Args or {}, Settings = def.Settings or {}, Callback = def.Callback, On = false}
 	cmd.names = {cmd.Name}
 	for _, a in ipairs(cmd.Aliases) do cmd.names[#cmd.names + 1] = a:lower() end
 	for _, n in ipairs(cmd.names) do Commands[n] = cmd end
@@ -597,29 +804,36 @@ end
 
 function Lib:RunCommand(cmd, args, force, silent)
 	local final = {}
+	local needArgs = not (cmd.Toggle and force == false)
 	for i, def in ipairs(cmd.Args) do
 		local v = args and args[i]
 		if v == nil then v = effArg(cmd, i) end
+		if v == nil and needArgs and (def.Type or "string") ~= "boolean" and not def.Optional then
+			notify(cmd.Name, "Argument fehlt: <" .. def.Name .. ": " .. typeLabel(def) .. ">", "error")
+			return false
+		end
 		final[i] = v; final[def.Name] = v
 	end
+	local cfg = buildCfg(cmd)
 	local ok, err
 	if cmd.Toggle then
 		local new = force
 		if new == nil then new = not cmd.On end
 		local prev = cmd.On
 		cmd.On = new
-		ok, err = pcall(cmd.Callback, final, new)
+		ok, err = pcall(cmd.Callback, final, new, cfg)
 		if not ok then cmd.On = prev end
 	else
-		ok, err = pcall(cmd.Callback, final)
+		ok, err = pcall(cmd.Callback, final, nil, cfg)
 	end
 	refreshRow(cmd, false)
+	if applyCmdFilter then applyCmdFilter() end
 	if not ok then
 		notify(cmd.Name, "Fehler: " .. tostring(err), "error")
 		warn("[NeonCmd] " .. cmd.Name .. ": " .. tostring(err))
 		return false
 	end
-	if not silent and cs(cmd).notify then
+	if not silent and S.notifyCommands and csr(cmd).notify then
 		notify(cmd.Name, cmd.Toggle and (cmd.On and "aktiviert" or "deaktiviert") or "ausgeführt")
 	end
 	return true
@@ -634,7 +848,7 @@ function Lib:Execute(text, opts)
 	local cmd = Commands[tokens[1]:lower()]
 	if not cmd then
 		local found
-		for name, c in pairs(Commands) do if name:find(tokens[1]:lower(), 1, true) then found = name break end end
+		for name in pairs(Commands) do if name:find(tokens[1]:lower(), 1, true) then found = name break end end
 		notify("Unbekannter Command", "'" .. tokens[1] .. "' existiert nicht" .. (found and ("\nMeintest du: " .. found .. "?") or ""), "error")
 		return false
 	end
@@ -667,7 +881,7 @@ local function searchCommands(q)
 	q = q:lower()
 	local res = {}
 	for _, cmd in ipairs(CommandList) do
-		if not cs(cmd).hidden then
+		if not csr(cmd).hidden then
 			local best, bestName
 			for _, n in ipairs(cmd.names) do
 				local s = n:find(q, 1, true)
@@ -681,6 +895,47 @@ local function searchCommands(q)
 	end
 	table.sort(res, function(a, b) if a.score ~= b.score then return a.score < b.score end return a.name < b.name end)
 	return res
+end
+
+-- Profile anwenden: Settings + ALLE Command-Settings; unbekannte Commands werden gemeldet und uebersprungen
+local function applyProfile(p)
+	local missing = {}
+	local src = p.settings
+	if not src then
+		src = {}
+		for _, k in ipairs({"theme", "bgAnim", "animSpeed", "windowTransparency", "uiScale", "corner", "blur", "customTheme"}) do src[k] = p[k] end
+	end
+	for k, v in pairs(src) do
+		if v ~= nil and not PROFILE_SKIP[k] then S[k] = deepcopy(v) end
+	end
+	if type(p.commands) == "table" then
+		Data.commands = deepcopy(p.commands)
+		for name in pairs(p.commands) do
+			local c = Commands[name]
+			if not (c and c.Name == name) then missing[#missing + 1] = name end
+		end
+		table.sort(missing)
+	end
+	return missing
+end
+local function reportMissing(profileName, missing)
+	if #missing == 0 then return end
+	warn("[NeonCmd] Profil '" .. profileName .. "': Commands nicht gefunden (übersprungen): " .. table.concat(missing, ", "))
+	notify("Profil '" .. profileName .. "'", #missing .. " Command(s) nicht gefunden – übersprungen:\n" .. table.concat(missing, ", "), "error")
+end
+function Lib:LoadProfile(name, quiet)
+	local p = Data.profiles[name]
+	if not p then notify("Profil", "'" .. tostring(name) .. "' existiert nicht", "error") return false end
+	local missing = applyProfile(p)
+	ActiveProfile = name
+	for cmd in pairs(Lib._rows or {}) do refreshRow(cmd, true) end
+	if closeCommandSettings then closeCommandSettings() end
+	applyAppearance(false)
+	if renderSettings then renderSettings() end
+	if applyCmdFilter then applyCmdFilter() end
+	if not quiet then notify("Profil", "'" .. name .. "' geladen") end
+	reportMissing(name, missing)
+	return true
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -830,7 +1085,7 @@ sigEv("key_pressed", "Taste gedrückt", "Beliebige Taste (KeyCode-Name)", STR("T
 	return function() c:Disconnect() end
 end)
 sigEv("key_released", "Taste losgelassen", "Beliebige Taste (KeyCode-Name)", STR("Taste", "G"), function(p, fire)
-	local c = UIS.InputEnded:Connect(function(i, g) if i.KeyCode.Name:lower() == p:lower() then fire() end end)
+	local c = UIS.InputEnded:Connect(function(i) if i.KeyCode.Name:lower() == p:lower() then fire() end end)
 	return function() c:Disconnect() end
 end)
 sigEv("mouse_click", "Mausklick", "Linksklick im Spiel", nil, simpleSignal(function(fire) return UIS.InputBegan:Connect(function(i, g) if not g and i.UserInputType == Enum.UserInputType.MouseButton1 then fire() end end) end))
@@ -907,48 +1162,65 @@ local function pollTriggers()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Hintergrund-Animationen
+-- Hintergrund-Animationen (Partikel, Regen, Gradient, Scanline, Pulse Glow)
 ---------------------------------------------------------------------------------------------------
-local BGLayer, ParticleHolder, GradFrame, Grad, ScanLine
+local BGLayer, ParticleHolder, GradFrame, Grad, ScanBand, PulseFrame, PulseStroke
 local Particles, Tm = {}, 0
+local NSK = NumberSequenceKeypoint.new
+
 local function buildBg()
 	BGLayer = New("Frame", {Name = "BG", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 0, ClipsDescendants = true, Parent = Win})
+	-- Gradient Flow
 	GradFrame = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), Visible = false, Parent = BGLayer})
-	Grad = New("UIGradient", {Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 1)}), Parent = GradFrame})
+	Grad = New("UIGradient", {Transparency = NumberSequence.new({NSK(0, 0.72), NSK(1, 1)}), Parent = GradFrame})
 	hook(GradFrame, function() Grad.Color = ColorSequence.new(Current.accent, Current.bg) end)
-	ScanLine = New("Frame", {Size = UDim2.new(1, 0, 0, 3), BackgroundTransparency = 0.75, Visible = false, Parent = BGLayer})
-	themed(ScanLine, {BackgroundColor3 = "accent"})
+	-- Scanline: breites weiches Band mit heller Vorderkante
+	ScanBand = New("Frame", {Size = UDim2.new(1, 0, 0, 150), BackgroundColor3 = Color3.new(1, 1, 1), Visible = false, Parent = BGLayer})
+	local sg = New("UIGradient", {Rotation = 90, Transparency = NumberSequence.new({NSK(0, 1), NSK(0.65, 0.9), NSK(0.97, 0.55), NSK(1, 1)}), Parent = ScanBand})
+	local edge = New("Frame", {AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 2), BackgroundTransparency = 0.25, Parent = ScanBand})
+	hook(ScanBand, function() sg.Color = ColorSequence.new(Current.accent); edge.BackgroundColor3 = Current.text end)
+	-- Pulse Glow: pulsierender Rand innen im Fenster
+	PulseFrame = New("Frame", {Position = UDim2.fromOffset(7, 7), Size = UDim2.new(1, -14, 1, -14), BackgroundTransparency = 1, Visible = false, Parent = BGLayer})
+	corner(PulseFrame, 1.2)
+	PulseStroke = New("UIStroke", {Thickness = 4, Transparency = 0.4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = PulseFrame})
+	themed(PulseStroke, {Color = "accent"})
+	-- Partikel / Regen
 	ParticleHolder = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, Parent = BGLayer})
-	for i = 1, 34 do
-		local f = New("Frame", {BackgroundTransparency = 0.7, Parent = ParticleHolder})
-		New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = f})
+	for i = 1, 40 do
+		local f = New("Frame", {BackgroundTransparency = 0.55, Parent = ParticleHolder})
+		round_(f)
 		Particles[i] = {f = f, x = math.random(), y = math.random(), v = 0.02 + math.random() * 0.05, w = 1 + math.random() * 2, ph = math.random() * 6, s = math.random(2, 5)}
 		hook(f, function() f.BackgroundColor3 = Current.accent end)
 	end
 end
 function setBgMode(mode)
 	if not BGLayer then return end
-	ParticleHolder.Visible = (mode == "Particles" or mode == "Rain")
+	local pm = (mode == "Particles" or mode == "Rain") and not S.perfMode
+	ParticleHolder.Visible = pm
 	GradFrame.Visible = (mode == "Gradient Flow")
-	ScanLine.Visible = (mode == "Scanline")
-	if mode ~= "Pulse Glow" and WinStroke then tw(WinStroke, 0.3, {Transparency = 0.35}) end
-	for _, p in ipairs(Particles) do
-		if mode == "Rain" then p.f.Size = UDim2.fromOffset(1, p.s * 5) else p.f.Size = UDim2.fromOffset(p.s, p.s) end
+	ScanBand.Visible = (mode == "Scanline")
+	PulseFrame.Visible = (mode == "Pulse Glow")
+	if mode ~= "Pulse Glow" and WinStroke then tw(WinStroke, 0.3, {Transparency = 0.35, Thickness = 1}) end
+	for i, p in ipairs(Particles) do
+		p.f.Visible = i <= S.particles
+		if mode == "Rain" then p.f.Size = UDim2.fromOffset(1, p.s * 6) else p.f.Size = UDim2.fromOffset(p.s, p.s) end
 	end
 end
 local function bgStep(dt)
-	if not (Win and Win.Visible) then return end
+	if not (Win and Win.Visible) or S.perfMode then return end
 	local mode, sp = S.bgAnim, S.animSpeed
 	if mode == "None" then return end
 	Tm = Tm + dt * sp
 	if mode == "Particles" then
-		for _, p in ipairs(Particles) do
+		for i = 1, S.particles do
+			local p = Particles[i]
 			p.y = p.y - p.v * dt * sp
 			if p.y < -0.05 then p.y = 1.05; p.x = math.random() end
 			p.f.Position = UDim2.fromScale(p.x + math.sin(Tm * p.w + p.ph) * 0.01, p.y)
 		end
 	elseif mode == "Rain" then
-		for _, p in ipairs(Particles) do
+		for i = 1, S.particles do
+			local p = Particles[i]
 			p.y = p.y + p.v * dt * sp * 4
 			if p.y > 1.05 then p.y = -0.05; p.x = math.random() end
 			p.f.Position = UDim2.fromScale(p.x, p.y)
@@ -956,9 +1228,13 @@ local function bgStep(dt)
 	elseif mode == "Gradient Flow" then
 		Grad.Rotation = (Tm * 25) % 360
 	elseif mode == "Scanline" then
-		ScanLine.Position = UDim2.fromScale(0, (Tm * 0.25) % 1.1 - 0.05)
+		ScanBand.Position = UDim2.fromScale(0, (Tm * 0.32) % 1.3 - 0.25)
 	elseif mode == "Pulse Glow" then
-		WinStroke.Transparency = 0.25 + (math.sin(Tm * 2) + 1) * 0.3
+		local k = (math.sin(Tm * 2.4) + 1) / 2
+		PulseStroke.Thickness = 2 + k * 5
+		PulseStroke.Transparency = 0.7 - k * 0.6
+		WinStroke.Thickness = 1 + k * 2
+		WinStroke.Transparency = 0.5 - k * 0.45
 	end
 end
 
@@ -975,28 +1251,33 @@ local function setBlur(on)
 	if not Blur then return end
 	tw(Blur, 0.4, {Size = (on and S.blur) and 14 or 0})
 end
-local function winHiddenPos()
-	local h = Gui and Gui.AbsoluteSize.Y or 800
-	return UDim2.new(0.5, 0, 0.5, -(h / 2 + 300 * S.uiScale))
-end
 function setState(s)
 	State = s
 	touch()
 	refreshSemi()
 end
+local function targetPos()
+	if S.fullscreen then return UDim2.fromScale(0.5, 0.5) end
+	return UDim2.fromScale(S.winX, S.winY)
+end
+local function hiddenPos()
+	local t = targetPos()
+	return UDim2.new(t.X.Scale, 0, -0.7, 0)
+end
 function Lib:OpenWindow()
 	if State == "full" or State == "loading" then return end
 	setState("full")
 	Win.Visible = true
-	Win.Position = winHiddenPos()
-	tw(Win, S.animDur, {Position = UDim2.fromScale(0.5, 0.5)}, Enum.EasingStyle.Back)
+	applyWindowMode(true)
+	Win.Position = hiddenPos()
+	tw(Win, S.animDur, {Position = targetPos()}, Enum.EasingStyle.Back)
 	switchTab(S.rememberTab and S.lastTab or "Commands", true)
 	setBlur(true)
 	busEmit("window_opened")
 end
 function Lib:CloseWindow()
 	if State ~= "full" then return end
-	tw(Win, S.animDur * 0.8, {Position = winHiddenPos()}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+	tw(Win, S.animDur * 0.8, {Position = hiddenPos()}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 	task.delay(S.animDur * 0.85, function() if State ~= "full" then Win.Visible = false end end)
 	setState("semi")
 	setBlur(false)
@@ -1011,6 +1292,15 @@ function Lib:FocusSearch()
 	setState("semi")
 	task.defer(function() if Semi.Box then Semi.Box:CaptureFocus() end end)
 end
+local FSButton
+function Lib:SetFullscreen(v)
+	S.fullscreen = v and true or false
+	applyWindowMode(false)
+	updateCorners()
+	if FSButton then FSButton.Text = S.fullscreen and "❐" or "⛶" end
+	if Commands.fullscreen then Commands.fullscreen.On = S.fullscreen; refreshRow(Commands.fullscreen, false) end
+	save()
+end
 
 ---------------------------------------------------------------------------------------------------
 -- Semi-Modus: Suchleiste + Vorschlaege + Ghost-Text
@@ -1022,6 +1312,7 @@ function layoutSemi()
 	Semi.Root.Size = UDim2.fromOffset(S.semiWidth, 40)
 	Semi.Root.Position = UDim2.new(0.5, 0, S.semiY / 100, 0)
 	Semi.Scale.Scale = S.uiScale
+	Semi.Box.TextSize = S.searchFont; Semi.Ghost.TextSize = S.searchFont
 end
 
 function refreshSemi()
@@ -1130,13 +1421,12 @@ local function buildSemi()
 	themed(bar, {BackgroundColor3 = "panel"}); corner(bar, 1.3); stroke(bar, 0.25)
 	Semi.Bar = bar
 	Label({Text = "❯", Font = Enum.Font.GothamBold, TextSize = 18, Position = UDim2.fromOffset(14, 0), Size = UDim2.fromOffset(18, 40), Parent = bar}, "accent")
-	Semi.Ghost = Label({Text = "", Font = Enum.Font.Code, TextSize = 16, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), TextTruncate = Enum.TextTruncate.None, Parent = bar}, "sub")
+	Semi.Ghost = Label({Text = "", Font = Enum.Font.Code, TextSize = S.searchFont, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), TextTruncate = Enum.TextTruncate.None, Parent = bar}, "sub")
 	Semi.Ghost.TextTransparency = 0.45
 	local box = New("TextBox", {Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), Text = "", PlaceholderText = "Command eingeben…", ClearTextOnFocus = false,
-		Font = Enum.Font.Code, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Parent = bar})
+		Font = Enum.Font.Code, TextSize = S.searchFont, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Parent = bar})
 	themed(box, {TextColor3 = "text", PlaceholderColor3 = "sub"})
 	Semi.Box = box
-	-- Panel (unter der Leiste): links Vorschlaege, rechts zuletzt gesucht
 	local panel = New("CanvasGroup", {Position = UDim2.fromOffset(0, 46), Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, GroupTransparency = 1, Visible = false, Parent = root})
 	Semi.Panel = panel
 	Semi.Left = Scroll({Size = UDim2.new(0.62, -4, 1, 0), ScrollingDirection = Enum.ScrollingDirection.X, AutomaticCanvasSize = Enum.AutomaticSize.X, ScrollBarThickness = 0, Parent = panel})
@@ -1164,20 +1454,19 @@ local function buildSemi()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Fenster + Tabs
+-- Fenster + Tabs (verschiebbar, Fullscreen)
 ---------------------------------------------------------------------------------------------------
 local TabNames = {"Commands", "Game", "Players", "Quick Tools", "Settings"}
 local Pages, TabBtns, CurrentTab = {}, {}, nil
-local TabBuilt = {}
 
 function switchTab(name, instant)
-	if not Pages[name] then return end
+	if not Pages[name] then name = "Commands" end
 	CurrentTab = name
 	S.lastTab = name
 	for n, p in pairs(Pages) do
 		if n == name then
 			p.Visible = true
-			if not instant then
+			if not instant and S.tabAnim then
 				p.Position = UDim2.fromOffset(0, 14)
 				tw(p, 0.3, {Position = UDim2.fromOffset(0, 0)})
 			else p.Position = UDim2.fromOffset(0, 0) end
@@ -1186,24 +1475,75 @@ function switchTab(name, instant)
 	for n, b in pairs(TabBtns) do
 		local on = (n == name)
 		tw(b.btn, 0.2, {TextColor3 = on and Current.accent or Current.sub})
-		tw(b.line, 0.25, {Size = on and UDim2.new(1, -20, 0, 2) or UDim2.new(0, 0, 0, 2)})
+		tw(b.line, S.tabAnim and 0.25 or 0, {Size = on and UDim2.new(1, -20, 0, 2) or UDim2.new(0, 0, 0, 2)})
 	end
 	if name == "Players" and refreshPlayers then refreshPlayers() end
 	save()
 end
 
+function updateCorners()
+	for i = #Corners, 1, -1 do
+		local c = Corners[i]
+		if not c[1].Parent then table.remove(Corners, i) else c[1].CornerRadius = UDim.new(0, math.floor(S.corner * c[2])) end
+	end
+	if WinCorner then WinCorner.CornerRadius = S.fullscreen and UDim.new(0, 0) or UDim.new(0, math.floor(S.corner * 1.5)) end
+end
+
+-- Fenstergroesse / Fullscreen anwenden (setPos = true setzt auch die Position)
+function applyWindowMode(setPos)
+	if not Win then return end
+	local sc = S.uiScale
+	if S.fullscreen then
+		Win.Size = UDim2.fromScale(1 / sc, 1 / sc)
+		if setPos or State == "full" then Win.Position = UDim2.fromScale(0.5, 0.5) end
+		if WinStroke then WinStroke.Enabled = false end
+	else
+		Win.Size = UDim2.fromOffset(S.winW, S.winH)
+		if (setPos or State == "full") and State == "full" and not setPos then Win.Position = UDim2.fromScale(S.winX, S.winY) end
+		if WinStroke then WinStroke.Enabled = true end
+	end
+	if WinCorner then WinCorner.CornerRadius = S.fullscreen and UDim.new(0, 0) or UDim.new(0, math.floor(S.corner * 1.5)) end
+end
+
 local function buildWindow()
-	Win = New("Frame", {Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(840, 540), Position = UDim2.fromScale(0.5, 0.5),
+	Win = New("Frame", {Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(S.winW, S.winH), Position = UDim2.fromScale(S.winX, S.winY),
 		BackgroundTransparency = S.windowTransparency, ClipsDescendants = true, Visible = false, Parent = Gui})
-	themed(Win, {BackgroundColor3 = "bg"}); corner(Win, 1.5); WinStroke = stroke(Win, 0.35)
+	themed(Win, {BackgroundColor3 = "bg"}); WinCorner = corner(Win, 1.5); WinStroke = stroke(Win, 0.35)
 	WinScale = New("UIScale", {Scale = S.uiScale, Parent = Win})
 	buildBg()
+
 	local top = New("Frame", {Size = UDim2.new(1, 0, 0, 46), BackgroundTransparency = 1, Parent = Win})
+	-- Drag-Griff (hinter den Tabs, damit Buttons weiter klickbar bleiben)
+	local handle = New("TextButton", {Size = UDim2.fromScale(1, 1), Text = "", BackgroundTransparency = 1, Parent = top})
+	local dragging, dragStart, startCenter = false, nil, nil
+	handle.InputBegan:Connect(function(i)
+		if S.fullscreen then return end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = mousePos()
+			startCenter = Win.AbsolutePosition + Win.AbsoluteSize / 2
+		end
+	end)
+	track(UIS.InputChanged:Connect(function(i)
+		if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+			local vp = Gui.AbsoluteSize
+			local c = startCenter + (mousePos() - dragStart)
+			c = Vector2.new(clamp(c.X, 80, vp.X - 80), clamp(c.Y, 30, vp.Y - 30))
+			Win.Position = UDim2.fromScale(c.X / vp.X, c.Y / vp.Y)
+		end
+	end))
+	track(UIS.InputEnded:Connect(function(i)
+		if dragging and i.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+			S.winX, S.winY = Win.Position.X.Scale, Win.Position.Y.Scale
+			save()
+		end
+	end))
 	Label({Text = "◆ " .. Lib.Name:upper(), Font = Enum.Font.GothamBlack, TextSize = 16, Position = UDim2.fromOffset(18, 0), Size = UDim2.fromOffset(170, 46), Parent = top}, "accent")
-	local holder = New("Frame", {Position = UDim2.fromOffset(190, 0), Size = UDim2.new(1, -250, 1, 0), BackgroundTransparency = 1, Parent = top})
+	local holder = New("Frame", {Position = UDim2.fromOffset(190, 0), Size = UDim2.new(1, -290, 1, 0), BackgroundTransparency = 1, Parent = top})
 	List(holder, 4, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 	for _, name in ipairs(TabNames) do
-		local b = New("TextButton", {Size = UDim2.fromOffset(112, 36), BackgroundTransparency = 1, Text = name, Font = Enum.Font.GothamMedium, TextSize = 14, LayoutOrder = nextLO(), Parent = holder})
+		local b = New("TextButton", {Size = UDim2.fromOffset(104, 36), BackgroundTransparency = 1, Text = name, Font = Enum.Font.GothamMedium, TextSize = 14, LayoutOrder = nextLO(), Parent = holder})
 		b.TextColor3 = Current.sub
 		local line = New("Frame", {AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 0), Size = UDim2.new(0, 0, 0, 2), BackgroundTransparency = 0, Parent = b})
 		themed(line, {BackgroundColor3 = "accent"})
@@ -1215,6 +1555,9 @@ local function buildWindow()
 	local close = Btn({Size = UDim2.fromOffset(32, 32), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Text = "✕", TextSize = 14, BackgroundTransparency = 0.3, Parent = top}, "panel2", "accent")
 	corner(close, 0.8); hover(close, 0, 0.3)
 	close.MouseButton1Click:Connect(function() Lib:CloseWindow() end)
+	FSButton = Btn({Size = UDim2.fromOffset(32, 32), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -52, 0.5, 0), Text = S.fullscreen and "❐" or "⛶", TextSize = 16, BackgroundTransparency = 0.3, Parent = top}, "panel2", "accent")
+	corner(FSButton, 0.8); hover(FSButton, 0, 0.3)
+	FSButton.MouseButton1Click:Connect(function() Lib:SetFullscreen(not S.fullscreen) end)
 	local line = New("Frame", {Position = UDim2.fromOffset(0, 46), Size = UDim2.new(1, 0, 0, 1), BackgroundTransparency = 0.7, Parent = Win})
 	themed(line, {BackgroundColor3 = "accent"})
 	local pagesHolder = New("Frame", {Position = UDim2.fromOffset(0, 48), Size = UDim2.new(1, 0, 1, -48), BackgroundTransparency = 1, Parent = Win})
@@ -1222,24 +1565,60 @@ local function buildWindow()
 	for _, name in ipairs(TabNames) do
 		Pages[name] = New("Frame", {Name = name, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, Parent = pagesHolder})
 	end
-	hook(Win, function(instant)
+	hook(Win, function()
 		for n, b in pairs(TabBtns) do b.btn.TextColor3 = (n == CurrentTab) and Current.accent or Current.sub end
 	end)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Tab: Commands
+-- Tab: Commands (mit Kategorie-Filtern, Favoriten, Aktiv-Filter)
 ---------------------------------------------------------------------------------------------------
-local CmdList, CmdBody, CmdDivider, CmdPanel, CmdFilter = nil, nil, nil, nil, ""
+local CmdList, CmdBody, CmdDivider, CmdPanel, CatChips
+local CmdFilter, CatFilter = "", "Alle"
 local CmdRows, SelectedCmd = {}, nil
+Lib._rows = CmdRows
 
 local function reorderRows()
 	for i, cmd in ipairs(CommandList) do if CmdRows[cmd] then CmdRows[cmd].row.LayoutOrder = i end end
 end
-local function applyCmdFilter()
+function applyCmdFilter()
+	if not CmdList then return end
 	local q = CmdFilter:lower()
 	for cmd, r in pairs(CmdRows) do
-		r.row.Visible = (q == "") or cmd.Name:find(q, 1, true) ~= nil or cmd.Description:lower():find(q, 1, true) ~= nil or cmd.Category:lower():find(q, 1, true) ~= nil
+		local ok = (q == "") or cmd.Name:find(q, 1, true) ~= nil or cmd.Description:lower():find(q, 1, true) ~= nil or cmd.Category:lower():find(q, 1, true) ~= nil
+		if ok then
+			if CatFilter == "★ Favoriten" then ok = csr(cmd).fav == true
+			elseif CatFilter == "● Aktiv" then ok = cmd.On == true
+			elseif CatFilter ~= "Alle" then ok = (cmd.Category == CatFilter) end
+		end
+		r.row.Visible = ok and true or false
+	end
+end
+function rebuildChips()
+	if not CatChips then return end
+	clearKids(CatChips)
+	local cats, seen = {"Alle", "★ Favoriten", "● Aktiv"}, {}
+	for _, cmd in ipairs(CommandList) do
+		if not seen[cmd.Category] then seen[cmd.Category] = true; cats[#cats + 1] = cmd.Category end
+	end
+	local draws = {}
+	for _, c in ipairs(cats) do
+		local b = New("TextButton", {AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 26), Text = c, Font = Enum.Font.GothamMedium, TextSize = 12,
+			BackgroundTransparency = 0, LayoutOrder = nextLO(), Parent = CatChips})
+		corner(b, 0.7); padding(b, 12, 0, 12, 0)
+		local function draw()
+			local on = (CatFilter == c)
+			b.BackgroundColor3 = on and Current.accent or Current.panel2
+			b.TextColor3 = on and Current.bg or Current.text
+			b.BackgroundTransparency = on and 0 or 0.15
+		end
+		draws[#draws + 1] = draw
+		hook(b, draw)
+		b.MouseButton1Click:Connect(function()
+			CatFilter = c
+			for _, d in ipairs(draws) do d() end
+			applyCmdFilter()
+		end)
 	end
 end
 function refreshRow(cmd, instant)
@@ -1250,8 +1629,21 @@ function refreshRow(cmd, instant)
 	tw(r.name, t, {TextColor3 = on and Current.bg or Current.text})
 	tw(r.desc, t, {TextColor3 = on and Current.bg or Current.sub})
 	tw(r.badge, t, {TextColor3 = on and Current.bg or Current.accent})
-	local st = cs(cmd)
+	local st = csr(cmd)
+	r.name.Text = ((st.fav and "★ " or "") .. cmd.Name .. r.sig)
 	r.badge.Text = ((st.keybind ~= "") and ("[" .. st.keybind .. "]") or "") .. (cmd.Toggle and (on and "  ● AN" or "  ○ AUS") or "")
+	r.badge.Visible = S.showBadges
+end
+local function layoutRow(cmd)
+	local r = CmdRows[cmd]; if not r then return end
+	if S.showDesc then
+		r.row.Size = UDim2.new(1, 0, 0, 46)
+		r.name.Position = UDim2.fromOffset(12, 5); r.name.Size = UDim2.new(1, -150, 0, 18)
+	else
+		r.row.Size = UDim2.new(1, 0, 0, 34)
+		r.name.Position = UDim2.fromOffset(12, 0); r.name.Size = UDim2.new(1, -150, 1, 0)
+	end
+	r.desc.Visible = S.showDesc
 end
 local function flashRow(cmd)
 	local r = CmdRows[cmd]; if not r then return end
@@ -1268,10 +1660,11 @@ local function buildCommandRow(cmd)
 	if CmdRows[cmd] or not CmdList then return end
 	local row = New("TextButton", {Size = UDim2.new(1, 0, 0, 46), BackgroundTransparency = 0.15, Text = "", Parent = CmdList})
 	corner(row, 0.8)
-	local name = Label({Text = cmd.Name .. argSig(cmd), Font = Enum.Font.GothamBold, TextSize = 14, Position = UDim2.fromOffset(12, 5), Size = UDim2.new(1, -150, 0, 18), Parent = row})
-	local desc = Label({Text = "[" .. cmd.Category .. "] " .. cmd.Description, TextSize = 12, Position = UDim2.fromOffset(12, 24), Size = UDim2.new(1, -150, 0, 16), Visible = S.showDesc, Parent = row}, "sub")
+	local name = Label({Text = cmd.Name, Font = Enum.Font.GothamBold, TextSize = 14, Position = UDim2.fromOffset(12, 5), Size = UDim2.new(1, -150, 0, 18), Parent = row})
+	local desc = Label({Text = "[" .. cmd.Category .. "] " .. cmd.Description, TextSize = 12, Position = UDim2.fromOffset(12, 24), Size = UDim2.new(1, -150, 0, 16), Parent = row}, "sub")
 	local badge = Label({TextSize = 12, Position = UDim2.new(1, -140, 0, 0), Size = UDim2.new(0, 130, 1, 0), TextXAlignment = Enum.TextXAlignment.Right, Parent = row}, "accent")
-	CmdRows[cmd] = {row = row, name = name, desc = desc, badge = badge}
+	CmdRows[cmd] = {row = row, name = name, desc = desc, badge = badge, sig = argSig(cmd)}
+	layoutRow(cmd)
 	hook(row, function(instant) refreshRow(cmd, instant) end)
 	row.MouseButton1Click:Connect(function()
 		if cmd.Toggle then Lib:RunCommand(cmd, nil, not cmd.On)
@@ -1282,7 +1675,7 @@ local function buildCommandRow(cmd)
 	end)
 	reorderRows(); applyCmdFilter()
 end
-Lib.OnCommandAdded = function(cmd) buildCommandRow(cmd); reorderRows() end
+Lib.OnCommandAdded = function(cmd) buildCommandRow(cmd); reorderRows(); rebuildChips() end
 
 function closeCommandSettings()
 	SelectedCmd = nil
@@ -1293,7 +1686,30 @@ function closeCommandSettings()
 	task.delay(0.36, function() if not SelectedCmd then CmdDivider.Visible = false; CmdPanel.Visible = false end end)
 end
 
+local function renderCmdSettingDef(sc, cmd, def, st)
+	local t = def.Type
+	local key = def.Key
+	local function get() local v = st.custom[key]; if v == nil then v = def.Default end return v end
+	local function set(v) st.custom[key] = v; save() end
+	if t == "section" then UI_Section(sc, def.Name or "")
+	elseif t == "text" then UI_Text(sc, def.Name or "")
+	elseif t == "toggle" then UI_Toggle(sc, def.Name, function() return get() == true end, set)
+	elseif t == "slider" then UI_Slider(sc, def.Name, def.Min or 0, def.Max or 100, def.Step or 1, function() return tonumber(get()) or def.Min or 0 end, set, def.Suffix)
+	elseif t == "input" then
+		UI_Input(sc, def.Name, get, function(v)
+			if def.Number then v = tonumber(v) or tonumber(get()) or 0 end
+			set(v); return v
+		end, def.Placeholder, def.Width or 140)
+	elseif t == "dropdown" then UI_Dropdown(sc, def.Name, def.Options or {}, get, set)
+	elseif t == "segment" then UI_Segment(sc, def.Name, def.Options or {}, get, set)
+	elseif t == "keybind" then UI_Keybind(sc, def.Name, function() return get() or "" end, set)
+	elseif t == "color" then UI_Color(sc, def.Name, function() return get() or "#FFFFFF" end, function(v, final) st.custom[key] = v; if final then save() end end)
+	elseif t == "button" then UI_Button(sc, def.Name, function() if def.Callback then pcall(def.Callback, cmd) end end)
+	end
+end
+
 function openCommandSettings(cmd)
+	prune()
 	SelectedCmd = cmd
 	local st = cs(cmd)
 	CmdDivider.Visible = true; CmdPanel.Visible = true
@@ -1304,7 +1720,11 @@ function openCommandSettings(cmd)
 	local sc = Scroll({Size = UDim2.fromScale(1, 1), Parent = CmdPanel}); List(sc, 6); padding(sc, 0, 0, 8, 0)
 	Label({Text = cmd.Name, Font = Enum.Font.GothamBlack, TextSize = 20, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = nextLO(), Parent = sc}, "accent")
 	UI_Text(sc, cmd.Description ~= "" and cmd.Description or "Keine Beschreibung.")
-	UI_Text(sc, "Usage: " .. cmd.Name .. (function() local p = {} for _, d in ipairs(cmd.Args) do p[#p + 1] = "<" .. d.Name .. ": " .. typeLabel(d) .. ">" end return #p > 0 and (" " .. table.concat(p, " ")) or "" end)())
+	UI_Text(sc, "Kategorie: " .. cmd.Category .. "   |   Usage: " .. cmd.Name .. (function()
+		local p = {}
+		for _, d in ipairs(cmd.Args) do p[#p + 1] = "<" .. d.Name .. ": " .. typeLabel(d) .. ">" end
+		return #p > 0 and (" " .. table.concat(p, " ")) or ""
+	end)())
 	UI_Section(sc, "Aktivierung")
 	UI_Keybind(sc, "Keybind", function() return st.keybind end, function(v) st.keybind = v; refreshRow(cmd, true); save() end)
 	UI_Segment(sc, "Modus", {"Hold", "Tap", "Release"}, function() return st.mode end, function(v) st.mode = v; save() end)
@@ -1325,7 +1745,12 @@ function openCommandSettings(cmd)
 			end
 		end
 	end
+	if cmd.Settings and #cmd.Settings > 0 then
+		UI_Section(sc, "Command-Optionen")
+		for _, def in ipairs(cmd.Settings) do renderCmdSettingDef(sc, cmd, def, st) end
+	end
 	UI_Section(sc, "Verhalten")
+	UI_Toggle(sc, "Favorit (★)", function() return st.fav end, function(v) st.fav = v; refreshRow(cmd, true); applyCmdFilter(); save() end)
 	UI_Toggle(sc, "Beim Laden automatisch starten", function() return st.autostart end, function(v) st.autostart = v; save() end)
 	UI_Toggle(sc, "Benachrichtigung bei Ausführung", function() return st.notify end, function(v) st.notify = v; save() end)
 	UI_Toggle(sc, "In Vorschlägen verstecken", function() return st.hidden end, function(v) st.hidden = v; save() end)
@@ -1346,13 +1771,15 @@ local function buildCommandsTab(page)
 	box:GetPropertyChangedSignal("Text"):Connect(function() CmdFilter = box.Text; applyCmdFilter() end)
 	local panic = Btn({Size = UDim2.new(0, 110, 1, 0), Position = UDim2.new(1, -110, 0, 0), Text = "Alle aus", Parent = header}, "panel2", "accent")
 	corner(panic, 0.8); stroke(panic, 0.5); panic.MouseButton1Click:Connect(function() Lib:Panic() end)
-	CmdBody = New("Frame", {Position = UDim2.fromOffset(0, 42), Size = UDim2.new(1, 0, 1, -42), BackgroundTransparency = 1, ClipsDescendants = true, Parent = page})
+	CatChips = Scroll({Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 28), ScrollingDirection = Enum.ScrollingDirection.X, AutomaticCanvasSize = Enum.AutomaticSize.X, ScrollBarThickness = 0, Parent = page})
+	List(CatChips, 5, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+	CmdBody = New("Frame", {Position = UDim2.fromOffset(0, 76), Size = UDim2.new(1, 0, 1, -76), BackgroundTransparency = 1, ClipsDescendants = true, Parent = page})
 	CmdList = Scroll({Size = UDim2.fromScale(1, 1), Parent = CmdBody}); List(CmdList, 5); padding(CmdList, 0, 0, 6, 0)
 	CmdDivider = New("Frame", {Size = UDim2.new(0, 2, 1, 0), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(1.05, 0), BackgroundTransparency = 0.3, Visible = false, Parent = CmdBody})
 	themed(CmdDivider, {BackgroundColor3 = "accent"})
 	CmdPanel = New("Frame", {Size = UDim2.new(0.5, -10, 1, 0), Position = UDim2.new(1.05, 0, 0, 0), BackgroundTransparency = 1, Visible = false, Parent = CmdBody})
 	for _, cmd in ipairs(CommandList) do buildCommandRow(cmd) end
-	reorderRows()
+	reorderRows(); rebuildChips()
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -1387,7 +1814,7 @@ local function buildGameTab(page)
 		{"Deine UserId", function() return tostring(LP.UserId) end},
 		{"Account-Alter (Tage)", function() return tostring(LP.AccountAge) end},
 		{"Team", function() return LP.Team and LP.Team.Name or "Keins" end},
-		{"Executor", function() local ok, n, v = pcall(function() return identifyexecutor() end) return ok and tostring(n) or "unbekannt" end},
+		{"Executor", function() local ok, n = pcall(function() return identifyexecutor() end) return ok and tostring(n) or "unbekannt" end},
 		{"Rejoin-Script", function() return ('game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game.Players.LocalPlayer)'):format(game.PlaceId, game.JobId) end},
 	}
 	for _, it in ipairs(items) do
@@ -1408,7 +1835,8 @@ end
 local function updateGameRows()
 	for _, r in ipairs(GameRows) do
 		local ok, v = pcall(r.get)
-		r.val.Text = ok and tostring(v) or "?"
+		local s = ok and tostring(v) or "?"
+		if r.val.Text ~= s then r.val.Text = s end
 	end
 end
 
@@ -1449,6 +1877,7 @@ end
 
 function refreshPlayers()
 	if not PlayersList then return end
+	prune()
 	local pos = PlayersList.CanvasPosition
 	clearKids(PlayersList)
 	local list = {}
@@ -1460,7 +1889,7 @@ function refreshPlayers()
 		local row = New("Frame", {Size = UDim2.new(1, 0, 0, 54), BackgroundTransparency = 0.15, LayoutOrder = nextLO(), Parent = PlayersList})
 		themed(row, {BackgroundColor3 = "panel2"}); corner(row, 0.8)
 		local av = New("ImageLabel", {Size = UDim2.fromOffset(38, 38), Position = UDim2.fromOffset(8, 8), BackgroundTransparency = 0.5, Parent = row})
-		themed(av, {BackgroundColor3 = "bg"}); New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = av})
+		themed(av, {BackgroundColor3 = "bg"}); round_(av)
 		if ThumbCache[plr.UserId] then av.Image = ThumbCache[plr.UserId]
 		else
 			task.spawn(function()
@@ -1504,20 +1933,43 @@ end
 ---------------------------------------------------------------------------------------------------
 -- Tab: Quick Tools (Editor mit Payload / Custom Code + Event-Triggern)
 ---------------------------------------------------------------------------------------------------
-local QTList, QTEditor, QTScroll, QTPicker
+local QTList, QTEditor, QTScroll, QTPicker, PickList, PickSearch
+local PickOnPick, PickFilter = nil, ""
 local StepTypes = {command = "Command", wait = "Warten (s)", notify = "Notify", tool = "Quick Tool"}
 
 local function newTool()
 	return {id = HttpService:GenerateGUID(false), name = "", keybind = "", mode = "Tap", type = "payload", steps = {}, code = "", triggers = {}, cooldown = 1, enabled = true}
 end
-
 local function closeEditor() QTEditor.Visible = false; QTPicker.Visible = false end
+
+local function fillPicker()
+	if not PickList then return end
+	clearKids(PickList)
+	local q = PickFilter:lower()
+	for _, ev in ipairs(EventList) do
+		if q == "" or ev.Name:lower():find(q, 1, true) or (ev.Description or ""):lower():find(q, 1, true) then
+			local b = Btn({Size = UDim2.new(1, 0, 0, 44), Text = "", BackgroundTransparency = 0.15, ZIndex = 21, LayoutOrder = nextLO(), Parent = PickList}, "panel2", "text")
+			corner(b, 0.7)
+			Label({Text = ev.Name, Font = Enum.Font.GothamBold, TextSize = 13, Position = UDim2.fromOffset(12, 4), Size = UDim2.new(0.6, 0, 0, 18), ZIndex = 22, Parent = b}, "accent")
+			Label({Text = ev.Description or "", TextSize = 11, Position = UDim2.fromOffset(12, 23), Size = UDim2.new(0.6, 0, 0, 16), ZIndex = 22, Parent = b}, "sub")
+			Label({Text = (ev.Param and ("Wert: " .. ev.Param.Label) or "kein Wert") .. (ev.Kind == "poll" and "  •  Bedingung" or "  •  Ereignis"),
+				TextSize = 11, Position = UDim2.new(0.55, 0, 0, 0), Size = UDim2.new(0.45, -12, 1, 0), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 22, Parent = b}, "text")
+			b.MouseButton1Click:Connect(function() if PickOnPick then PickOnPick(ev) end end)
+		end
+	end
+end
+local function showPicker(cb)
+	PickOnPick = cb; PickFilter = ""; PickSearch.Text = ""
+	fillPicker()
+	QTPicker.Visible = true
+end
 
 local function openEditor(tool, isNew)
 	local w = deepcopy(tool)
 	local codeBox
 	QTEditor.Visible = true; QTPicker.Visible = false
 	local function render()
+		prune()
 		local pos = QTScroll.CanvasPosition
 		clearKids(QTScroll)
 		Label({Text = isNew and "Neues Quick Tool" or "Quick Tool bearbeiten", Font = Enum.Font.GothamBlack, TextSize = 18, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = nextLO(), Parent = QTScroll}, "accent")
@@ -1579,7 +2031,14 @@ local function openEditor(tool, isNew)
 			MiniBtn(acts, trg.enabled ~= false and "An" or "Aus", trg.enabled ~= false, function() trg.enabled = not (trg.enabled ~= false); render() end)
 			MiniBtn(acts, "✕", false, function() table.remove(w.triggers, i); render() end)
 		end
-		UI_Button(QTScroll, "+ Event-Trigger hinzufügen (" .. #EventList .. " verfügbar)", function() QTPicker.Visible = true end)
+		UI_Button(QTScroll, "+ Event-Trigger hinzufügen (" .. #EventList .. " verfügbar)", function()
+			if codeBox then w.code = codeBox.Text end
+			showPicker(function(ev)
+				w.triggers[#w.triggers + 1] = {event = ev.Id, param = ev.Param and tostring(ev.Param.Default or "") or "", enabled = true}
+				QTPicker.Visible = false
+				render()
+			end)
+		end)
 		UI_Toggle(QTScroll, "Quick Tool aktiv", function() return w.enabled ~= false end, function(v) w.enabled = v end)
 		UI_Section(QTScroll, "Aktionen")
 		UI_Button(QTScroll, "Speichern", function()
@@ -1600,6 +2059,7 @@ end
 
 function refreshQTList()
 	if not QTList then return end
+	prune()
 	clearKids(QTList)
 	if #Data.quicktools == 0 then UI_Text(QTList, "Noch keine Quick Tools. Erstelle eines mit „+ Neues Quick Tool“.") end
 	for i, tool in ipairs(Data.quicktools) do
@@ -1624,34 +2084,29 @@ local function buildQuickToolsTab(page)
 	corner(b, 0.8); stroke(b, 0.5); hover(b, 0, 0.1)
 	b.MouseButton1Click:Connect(function() openEditor(newTool(), true) end)
 	QTList = Scroll({Position = UDim2.fromOffset(0, 42), Size = UDim2.new(1, 0, 1, -42), Parent = page}); List(QTList, 5); padding(QTList, 0, 0, 6, 0)
-	QTEditor = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0.02, Visible = false, ZIndex = 5, Parent = page})
+	QTEditor = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0.02, Visible = false, ZIndex = 5, Active = true, Parent = page})
 	themed(QTEditor, {BackgroundColor3 = "bg"}); corner(QTEditor, 1)
 	QTScroll = Scroll({Size = UDim2.new(1, 0, 1, 0), ZIndex = 5, Parent = QTEditor}); List(QTScroll, 6); padding(QTScroll, 4, 4, 10, 4)
-	QTPicker = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0, Visible = false, ZIndex = 20, Parent = QTEditor})
+	-- Event-Auswahl (Overlay mit Suche)
+	QTPicker = New("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0, Visible = false, ZIndex = 20, Active = true, Parent = QTEditor})
 	themed(QTPicker, {BackgroundColor3 = "bg"}); corner(QTPicker, 1); stroke(QTPicker, 0.4)
-	Label({Text = "Event auswählen", Font = Enum.Font.GothamBlack, TextSize = 16, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -120, 0, 24), ZIndex = 21, Parent = QTPicker}, "accent")
+	Label({Text = "Event auswählen", Font = Enum.Font.GothamBlack, TextSize = 16, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(0.4, 0, 0, 26), ZIndex = 21, Parent = QTPicker}, "accent")
+	PickSearch = New("TextBox", {Position = UDim2.new(0.4, 0, 0, 8), Size = UDim2.new(0.6, -112, 0, 26), Text = "", PlaceholderText = "Event suchen…", ClearTextOnFocus = false,
+		Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 0, ZIndex = 21, Parent = QTPicker})
+	themed(PickSearch, {BackgroundColor3 = "panel2", TextColor3 = "text", PlaceholderColor3 = "sub"}); corner(PickSearch, 0.6); padding(PickSearch, 8, 0, 8, 0)
+	PickSearch:GetPropertyChangedSignal("Text"):Connect(function() PickFilter = PickSearch.Text; fillPicker() end)
 	local cancel = Btn({Size = UDim2.fromOffset(90, 26), Position = UDim2.new(1, -100, 0, 8), Text = "Zurück", TextSize = 12, ZIndex = 21, Parent = QTPicker}, "panel2", "accent")
 	corner(cancel, 0.6); cancel.MouseButton1Click:Connect(function() QTPicker.Visible = false end)
-	QTPicker:SetAttribute("built", false)
-end
-local function fillEventPicker(onPick)
-	local sc = QTPicker:FindFirstChild("PickList")
-	if sc then sc:Destroy() end
-	sc = Scroll({Name = "PickList", Position = UDim2.fromOffset(8, 40), Size = UDim2.new(1, -16, 1, -48), ZIndex = 21, Parent = QTPicker}); List(sc, 4)
-	for _, ev in ipairs(EventList) do
-		local b = Btn({Size = UDim2.new(1, 0, 0, 40), Text = "", BackgroundTransparency = 0.15, ZIndex = 21, LayoutOrder = nextLO(), Parent = sc}, "panel2", "text")
-		corner(b, 0.7)
-		Label({Text = ev.Name .. (ev.Kind == "poll" and "" or ""), Font = Enum.Font.GothamBold, TextSize = 13, Position = UDim2.fromOffset(12, 3), Size = UDim2.new(0.6, 0, 0, 18), ZIndex = 22, Parent = b}, "accent")
-		Label({Text = ev.Description or "", TextSize = 11, Position = UDim2.fromOffset(12, 21), Size = UDim2.new(0.8, 0, 0, 16), ZIndex = 22, Parent = b}, "sub")
-		Label({Text = ev.Param and ("Wert: " .. ev.Param.Label) or "", TextSize = 11, Position = UDim2.new(0.6, 0, 0, 3), Size = UDim2.new(0.4, -12, 0, 18), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 22, Parent = b}, "text")
-		b.MouseButton1Click:Connect(function() onPick(ev) end)
-	end
+	PickList = Scroll({Position = UDim2.fromOffset(8, 42), Size = UDim2.new(1, -16, 1, -50), ZIndex = 21, Parent = QTPicker}); List(PickList, 4)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Tab: Settings
+-- Tab: Settings (Sidebar mit Bereichen)
 ---------------------------------------------------------------------------------------------------
-local SettingsScroll
+local SettingsSections, SettingsCur = {}, "Aussehen"
+local SettingsSide, SettingsScroll
+local ProfSel, ProfNew = ActiveProfile, ""
+
 local function profileNames()
 	local t = {}
 	for n in pairs(Data.profiles) do t[#t + 1] = n end
@@ -1663,80 +2118,92 @@ function applyAppearance(instant)
 	applyTheme(instant)
 	setBgMode(S.bgAnim)
 	if Win then Win.BackgroundTransparency = S.windowTransparency; WinScale.Scale = S.uiScale end
-	for i = #Corners, 1, -1 do
-		local c = Corners[i]
-		if not c[1].Parent then table.remove(Corners, i) else c[1].CornerRadius = UDim.new(0, math.floor(S.corner * c[2])) end
-	end
-	if Blur then setBlur(State == "full") end
+	updateCorners(); applyWindowMode(false)
+	if FSButton then FSButton.Text = S.fullscreen and "❐" or "⛶" end
+	setBlur(State == "full")
 	layoutSemi()
-	if S.autoSaveProfile then Data.profiles[ActiveProfile] = snapshotProfile() end
+	applyNotifPos()
 	save()
 end
 
-function renderSettings()
-	if not SettingsScroll then return end
-	local pos = SettingsScroll.CanvasPosition
-	clearKids(SettingsScroll)
-	local sc = SettingsScroll
-	local function simple(k) return function() return S[k] end, function(v) S[k] = v; save() end end
-	local function appear(k) return function() return S[k] end, function(v) S[k] = v; applyAppearance(false) end end
+local function SL(sc, text, min, max, step, key, suffix, fn, deferred)
+	return UI_Slider(sc, text, min, max, step, function() return S[key] end, function(v) S[key] = v; if fn then fn(v) end save() end, suffix, deferred)
+end
+local function TG(sc, text, key, fn)
+	return UI_Toggle(sc, text, function() return S[key] end, function(v) S[key] = v; if fn then fn(v) end save() end)
+end
+local function DD(sc, text, opts, key, fn)
+	return UI_Dropdown(sc, text, opts, function() return S[key] end, function(v) S[key] = v; if fn then fn(v) end save() end)
+end
+local function KB(sc, text, key, default)
+	return UI_Keybind(sc, text, function() return S[key] end, function(v) S[key] = (v ~= "" or not default) and v or default; save() end)
+end
+local function reapply() applyAppearance(false) end
 
-	UI_Section(sc, "Aussehen")
-	UI_Dropdown(sc, "Theme", function() local t = deepcopy(ThemeOrder) t[#t + 1] = "Custom" return t end, appear("theme"))
-	UI_Dropdown(sc, "Hintergrund-Animation", BG_MODES, appear("bgAnim"))
-	UI_Slider(sc, "Animationsgeschwindigkeit", 0.2, 3, 0.1, appear("animSpeed"))
-	UI_Slider(sc, "Fenster-Transparenz", 0, 0.6, 0.02, appear("windowTransparency"))
-	UI_Slider(sc, "UI-Skalierung", 0.7, 1.3, 0.05, appear("uiScale"))
-	UI_Slider(sc, "Ecken-Rundung", 0, 20, 1, appear("corner"), "px")
-	UI_Toggle(sc, "Hintergrund-Unschärfe wenn Fenster offen", appear("blur"))
+local function addSection(name, build) SettingsSections[#SettingsSections + 1] = {name = name, build = build} end
 
-	UI_Section(sc, "Custom Theme (Hex-Farben)")
+addSection("Aussehen", function(sc)
+	UI_Section(sc, "Theme")
+	DD(sc, "Theme", function() local t = deepcopy(ThemeOrder); t[#t + 1] = "Custom"; return t end, "theme", reapply)
+	DD(sc, "Hintergrund-Animation", BG_MODES, "bgAnim", function() setBgMode(S.bgAnim) end)
+	SL(sc, "Animationsgeschwindigkeit", 0.2, 3, 0.1, "animSpeed")
+	UI_Section(sc, "Fenster-Look")
+	SL(sc, "Fenster-Transparenz", 0, 0.6, 0.02, "windowTransparency", nil, function(v) Win.BackgroundTransparency = v end)
+	SL(sc, "UI-Skalierung (wirkt beim Loslassen)", 0.7, 1.3, 0.05, "uiScale", nil, reapply, true)
+	SL(sc, "Ecken-Rundung", 0, 20, 1, "corner", " px", function() updateCorners() end)
+	TG(sc, "Hintergrund-Unschärfe wenn Fenster offen", "blur", function() setBlur(State == "full") end)
+end)
+
+addSection("Theme-Editor", function(sc)
+	UI_Section(sc, "Custom Theme – Farben per Color Picker")
+	UI_Text(sc, "Klicke eine Farbe an, um den Picker aufzuklappen. Änderungen aktivieren das Custom Theme live.")
 	for _, k in ipairs(THEME_KEYS) do
-		UI_Input(sc, ({bg = "Hintergrund", panel = "Panel", panel2 = "Panel 2 (Zeilen)", accent = "Akzent", text = "Text", sub = "Subtext"})[k],
-			function() return S.customTheme[k] end,
-			function(v)
-				local h = parseHex(v)
-				if not h then notify("Ungültige Farbe", "Format: #RRGGBB", "error") return S.customTheme[k] end
-				S.customTheme[k] = h
-				if S.theme == "Custom" then applyAppearance(false) else save() end
-				return h
-			end, "#RRGGBB", 110)
+		UI_Color(sc, THEME_LABELS[k], function() return S.customTheme[k] end, function(hex, final)
+			S.customTheme[k] = hex
+			if S.theme ~= "Custom" then S.theme = "Custom" end
+			Pending.theme = true
+			if final then save() end
+		end)
 	end
+	UI_Section(sc, "Aktionen")
 	UI_Button(sc, "Custom Theme aktivieren", function() S.theme = "Custom"; applyAppearance(false); renderSettings() end)
 	UI_Button(sc, "Aktuelles Theme in Custom kopieren", function()
 		for _, k in ipairs(THEME_KEYS) do S.customTheme[k] = "#" .. Current[k]:ToHex():upper() end
 		save(); renderSettings(); notify("Custom Theme", "Farben des aktuellen Themes übernommen")
 	end)
+	UI_Button(sc, "Custom Theme zurücksetzen", function()
+		S.customTheme = deepcopy(Themes["Neon Blue"]); applyAppearance(false); renderSettings()
+	end)
+end)
 
-	UI_Section(sc, "Profile (Aussehen wird gespeichert)")
-	local selProfile, newName = ActiveProfile, ""
-	UI_Dropdown(sc, "Profil wählen", profileNames, function() return selProfile end, function(v) selProfile = v end)
-	UI_Button(sc, "Profil laden", function()
-		local p = Data.profiles[selProfile]
-		if not p then return end
-		for _, k in ipairs(APPEARANCE) do if p[k] ~= nil then S[k] = deepcopy(p[k]) end end
-		ActiveProfile = selProfile
-		applyAppearance(false); renderSettings(); notify("Profil", "'" .. selProfile .. "' geladen")
+addSection("Profile", function(sc)
+	UI_Section(sc, "Profile speichern Aussehen, ALLE Settings und ALLE Command-Settings")
+	UI_Text(sc, "Aktives Profil: " .. ActiveProfile .. "   |   Startprofil: " .. S.startProfile ..
+		"\nFehlende Commands werden beim Laden gemeldet und übersprungen.")
+	UI_Dropdown(sc, "Profil wählen", profileNames, function() return ProfSel end, function(v) ProfSel = v end)
+	UI_Button(sc, "Gewähltes Profil laden", function() Lib:LoadProfile(ProfSel) end)
+	UI_Button(sc, "Aktuellen Stand in gewähltes Profil speichern", function()
+		Data.profiles[ProfSel] = snapshotProfile(); save(); notify("Profil", "'" .. ProfSel .. "' gespeichert")
 	end)
-	UI_Button(sc, "Aktuelles Aussehen in gewähltes Profil speichern", function()
-		Data.profiles[selProfile] = snapshotProfile(); save(); notify("Profil", "'" .. selProfile .. "' gespeichert")
-	end)
-	UI_Input(sc, "Neues Profil (Name)", function() return newName end, function(v) newName = trim(v) return newName end, "Profilname", 160)
+	UI_Input(sc, "Neues Profil (Name)", function() return ProfNew end, function(v) ProfNew = trim(v) return ProfNew end, "Profilname", 160)
 	UI_Button(sc, "Als neues Profil speichern", function()
-		if newName == "" then notify("Profil", "Gib zuerst einen Namen ein", "error") return end
-		Data.profiles[newName] = snapshotProfile(); ActiveProfile = newName; save(); renderSettings(); notify("Profil", "'" .. newName .. "' erstellt")
+		if ProfNew == "" then notify("Profil", "Gib zuerst einen Namen ein", "error") return end
+		Data.profiles[ProfNew] = snapshotProfile(); ActiveProfile = ProfNew; ProfSel = ProfNew; save(); renderSettings()
+		notify("Profil", "'" .. ProfNew .. "' erstellt")
 	end)
-	UI_Button(sc, "Gewähltes Profil als Startprofil setzen", function() S.startProfile = selProfile; save(); notify("Startprofil", "'" .. selProfile .. "' wird beim Start geladen") end)
+	UI_Button(sc, "Gewähltes Profil als Startprofil setzen", function() S.startProfile = ProfSel; save(); renderSettings(); notify("Startprofil", "'" .. ProfSel .. "' wird beim Start geladen") end)
 	UI_Button(sc, "Gewähltes Profil löschen", function()
-		if selProfile == "Default" then notify("Profil", "Das Standardprofil kann nicht gelöscht werden", "error") return end
-		Data.profiles[selProfile] = nil
-		if S.startProfile == selProfile then S.startProfile = "Default" end
-		if ActiveProfile == selProfile then ActiveProfile = "Default" end
-		save(); renderSettings()
+		if ProfSel == "Default" then notify("Profil", "Das Standardprofil kann nicht gelöscht werden", "error") return end
+		Data.profiles[ProfSel] = nil
+		if S.startProfile == ProfSel then S.startProfile = "Default" end
+		if ActiveProfile == ProfSel then ActiveProfile = "Default" end
+		ProfSel = "Default"; save(); renderSettings()
 	end)
-	UI_Toggle(sc, "Änderungen automatisch im aktiven Profil speichern", simple("autoSaveProfile"))
-	UI_Button(sc, "Profil exportieren (JSON in Zwischenablage)", function()
-		if clip(HttpService:JSONEncode(snapshotProfile())) then notify("Export", "Profil kopiert") else notify("Export", "Keine Clipboard-Funktion", "error") end
+	TG(sc, "Änderungen automatisch im aktiven Profil speichern", "autoSaveProfile")
+	UI_Section(sc, "Export / Import")
+	UI_Button(sc, "Gewähltes Profil exportieren (JSON in Zwischenablage)", function()
+		local p = Data.profiles[ProfSel]
+		if p and clip(HttpService:JSONEncode(p)) then notify("Export", "Profil kopiert") else notify("Export", "Keine Clipboard-Funktion", "error") end
 	end)
 	UI_Input(sc, "Profil importieren (JSON einfügen)", function() return "" end, function(v)
 		local ok, d = pcall(function() return HttpService:JSONDecode(v) end)
@@ -1746,63 +2213,143 @@ function renderSettings()
 		else notify("Import", "Ungültiges JSON", "error") end
 		return ""
 	end, "JSON …", 160)
+end)
 
-	UI_Section(sc, "Fenster & Suchleiste")
-	UI_Keybind(sc, "Fenster öffnen/schließen", function() return S.openKey end, function(v) S.openKey = (v ~= "") and v or "RightShift"; save() end)
-	UI_Keybind(sc, "Suchleiste fokussieren", function() return S.focusKey end, function(v) S.focusKey = (v ~= "") and v or "RightControl"; save() end)
-	UI_Keybind(sc, "Panic-Taste (alle Toggles aus)", function() return S.panicKey end, function(v) S.panicKey = v; save() end)
-	UI_Slider(sc, "Suchleiste unsichtbar nach (0 = nie)", 0, 300, 5, simple("idleHide"), " s")
-	UI_Slider(sc, "Transparenz der Suchleiste im Leerlauf", 0.1, 0.9, 0.05, function() return S.semiIdle end, function(v) S.semiIdle = v; refreshSemi(); save() end)
-	UI_Slider(sc, "Suchleiste Y-Position", 5, 90, 1, function() return S.semiY end, function(v) S.semiY = v; layoutSemi(); save() end, " %")
-	UI_Slider(sc, "Suchleiste Breite", 300, 800, 10, function() return S.semiWidth end, function(v) S.semiWidth = v; layoutSemi(); save() end, " px")
-	UI_Slider(sc, "Öffnen-Animation Dauer", 0.2, 1.2, 0.05, simple("animDur"), " s")
-	UI_Dropdown(sc, "Start-Zustand", {"Semi", "Full"}, simple("startState"))
-	UI_Toggle(sc, "Letzten Tab merken", simple("rememberTab"))
-	UI_Toggle(sc, "Descriptions in der Command-Liste", function() return S.showDesc end, function(v)
-		S.showDesc = v; for _, r in pairs(CmdRows) do r.desc.Visible = v end; save()
+addSection("Fenster", function(sc)
+	UI_Section(sc, "Modus & Größe")
+	TG(sc, "Fullscreen-Modus (ganzer Bildschirm, kein Fenster)", "fullscreen", function() Lib:SetFullscreen(S.fullscreen) end)
+	SL(sc, "Fenster-Breite (wirkt beim Loslassen)", 600, 1300, 10, "winW", " px", function() applyWindowMode(false) end, true)
+	SL(sc, "Fenster-Höhe (wirkt beim Loslassen)", 400, 900, 10, "winH", " px", function() applyWindowMode(false) end, true)
+	UI_Button(sc, "Fenster-Position zurücksetzen (Mitte)", function()
+		S.winX, S.winY = 0.5, 0.5
+		if State == "full" and not S.fullscreen then tw(Win, 0.4, {Position = UDim2.fromScale(0.5, 0.5)}) end
+		save()
 	end)
+	UI_Section(sc, "Tasten")
+	KB(sc, "Fenster öffnen/schließen", "openKey", "RightShift")
+	KB(sc, "Suchleiste fokussieren", "focusKey", "RightControl")
+	KB(sc, "Panic-Taste (alle Toggles aus)", "panicKey")
+	TG(sc, "Escape schließt das Fenster", "escClose")
+	UI_Section(sc, "Verhalten")
+	DD(sc, "Start-Zustand", {"Semi", "Full"}, "startState")
+	TG(sc, "Letzten Tab merken", "rememberTab")
+	TG(sc, "Tab-Wechsel-Animation", "tabAnim")
+	SL(sc, "Öffnen-Animation Dauer", 0.2, 1.2, 0.05, "animDur", " s")
+end)
 
+addSection("Suchleiste", function(sc)
+	UI_Section(sc, "Sichtbarkeit")
+	SL(sc, "Unsichtbar nach Inaktivität (0 = nie)", 0, 300, 5, "idleHide", " s")
+	SL(sc, "Transparenz im Leerlauf", 0.1, 0.9, 0.05, "semiIdle", nil, function() refreshSemi() end)
+	UI_Section(sc, "Position & Größe")
+	SL(sc, "Y-Position", 5, 90, 1, "semiY", " %", function() layoutSemi() end)
+	SL(sc, "Breite", 300, 800, 10, "semiWidth", " px", function() layoutSemi() end)
+	SL(sc, "Schriftgröße", 12, 22, 1, "searchFont", " px", function() layoutSemi() end)
 	UI_Section(sc, "Suche")
-	UI_Slider(sc, "Max. Vorschläge", 3, 12, 1, simple("maxSuggest"))
-	UI_Slider(sc, "Max. letzte Suchen", 3, 12, 1, simple("maxHistory"))
-	UI_Toggle(sc, "Tab übernimmt Top-Vorschlag", simple("tabComplete"))
-	UI_Toggle(sc, "Ghost-Text (Top-Vorschlag + Argument-Hinweis)", simple("ghostText"))
-	UI_Toggle(sc, "Teilwort-Suche (nicht nur Anfang)", simple("substring"))
+	SL(sc, "Max. Vorschläge", 3, 12, 1, "maxSuggest")
+	SL(sc, "Max. letzte Suchen", 3, 12, 1, "maxHistory")
+	TG(sc, "Tab übernimmt Top-Vorschlag", "tabComplete")
+	TG(sc, "Ghost-Text (Top-Vorschlag + Argument-Hinweis)", "ghostText")
+	TG(sc, "Teilwort-Suche (nicht nur Wortanfang)", "substring")
 	UI_Button(sc, "Suchverlauf löschen", function() for i = #History, 1, -1 do History[i] = nil end save(); notify("Verlauf", "gelöscht") end)
+end)
 
-	UI_Section(sc, "Benachrichtigungen")
-	UI_Toggle(sc, "Benachrichtigungen aktiv", simple("notif"))
-	UI_Slider(sc, "Anzeigedauer", 1, 10, 0.5, simple("notifDuration"), " s")
-	UI_Dropdown(sc, "Position", {"TopRight", "TopLeft", "BottomRight", "BottomLeft"}, function() return S.notifPos end, function(v) S.notifPos = v; applyNotifPos(); save() end)
-	UI_Button(sc, "Test-Benachrichtigung", function() notify("Test", "So sehen Benachrichtigungen aus.") end)
-
-	UI_Section(sc, "Commands")
-	UI_Toggle(sc, "Auto-Start-Commands beim Laden ausführen", simple("autoStart"))
+addSection("Commands", function(sc)
+	UI_Section(sc, "Anzeige")
+	TG(sc, "Beschreibungen in der Command-Liste zeigen", "showDesc", function() for cmd in pairs(CmdRows) do layoutRow(cmd) end end)
+	TG(sc, "Keybind-/Status-Badges zeigen", "showBadges", function() for cmd in pairs(CmdRows) do refreshRow(cmd, true) end end)
+	UI_Section(sc, "Ausführung")
+	TG(sc, "Benachrichtigung bei Command-Ausführung", "notifyCommands")
+	TG(sc, "Auto-Start-Commands beim Laden ausführen", "autoStart")
 	UI_Button(sc, "Alle Toggle-Commands ausschalten", function() Lib:Panic() end)
 	UI_Button(sc, "Alle Command-Settings zurücksetzen", function()
 		Data.commands = {}; save()
 		for cmd in pairs(CmdRows) do refreshRow(cmd, true) end
-		notify("Commands", "Keybinds und Standardwerte zurückgesetzt")
+		closeCommandSettings(); applyCmdFilter()
+		notify("Commands", "Keybinds, Standardwerte und Optionen zurückgesetzt")
 	end)
+end)
 
-	UI_Section(sc, "Sonstiges")
+addSection("Benachrichtigungen", function(sc)
+	TG(sc, "Benachrichtigungen aktiv", "notif")
+	SL(sc, "Anzeigedauer", 1, 10, 0.5, "notifDuration", " s")
+	SL(sc, "Max. gleichzeitig", 1, 10, 1, "notifMax")
+	DD(sc, "Position", {"TopRight", "TopLeft", "BottomRight", "BottomLeft"}, "notifPos", function() applyNotifPos() end)
+	UI_Button(sc, "Test-Benachrichtigung", function() notify("Test", "So sehen Benachrichtigungen aus.") end)
+end)
+
+addSection("Performance", function(sc)
+	UI_Text(sc, "Wenn das UI deinen Client bremst: Performance-Modus an oder die Animationen reduzieren.")
+	TG(sc, "Performance-Modus (keine Hintergrund-Animation)", "perfMode", function() setBgMode(S.bgAnim) end)
+	SL(sc, "Animations-FPS des Hintergrunds", 10, 60, 5, "bgFps", " fps")
+	SL(sc, "Anzahl Partikel / Regentropfen", 5, 40, 1, "particles", nil, function() setBgMode(S.bgAnim) end)
+	TG(sc, "Tab-Wechsel-Animation", "tabAnim")
+	TG(sc, "Hintergrund-Unschärfe", "blur", function() setBlur(State == "full") end)
+end)
+
+addSection("Sonstiges", function(sc)
 	UI_Button(sc, "Jetzt speichern", function() FS.save(Data); notify("Gespeichert", canFS and "Daten geschrieben" or "Executor ohne Dateizugriff – nichts gespeichert") end)
 	UI_Button(sc, "Alle Einstellungen zurücksetzen", function()
-		for k, v in pairs(DEFAULTS) do S[k] = deepcopy(v) end
+		for k, v in pairs(DEFAULTS) do if not PROFILE_SKIP[k] then S[k] = deepcopy(v) end end
 		applyAppearance(false); renderSettings(); notify("Settings", "Auf Standard zurückgesetzt")
 	end)
 	UI_Button(sc, "UI entladen (Unload)", function() Lib:Unload() end)
 	UI_Text(sc, Lib.Name .. " v" .. Lib.Version .. "  •  Speichern: " .. (canFS and "aktiv (NeonCmd/data.json)" or "nicht verfügbar"))
+end)
+
+function Lib:AddSettingsSection(name, builder)
+	addSection(name, function(sc) builder(sc, Lib.UI) end)
+	if SettingsSide then Lib._renderSidebar() end
+end
+
+function renderSettings()
+	if not SettingsScroll then return end
+	prune()
+	local pos = SettingsScroll.CanvasPosition
+	clearKids(SettingsScroll)
+	for _, sec in ipairs(SettingsSections) do
+		if sec.name == SettingsCur then
+			local ok, err = pcall(sec.build, SettingsScroll)
+			if not ok then warn("[NeonCmd] Settings-Bereich '" .. sec.name .. "': " .. tostring(err)) end
+		end
+	end
 	SettingsScroll.CanvasPosition = pos
+end
+function Lib._renderSidebar()
+	if not SettingsSide then return end
+	clearKids(SettingsSide)
+	local draws = {}
+	for _, sec in ipairs(SettingsSections) do
+		local b = New("TextButton", {Size = UDim2.new(1, 0, 0, 34), Text = "  " .. sec.name, Font = Enum.Font.GothamMedium, TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 0, LayoutOrder = nextLO(), Parent = SettingsSide})
+		corner(b, 0.7)
+		local function draw()
+			local on = (SettingsCur == sec.name)
+			b.BackgroundColor3 = on and Current.accent or Current.panel2
+			b.TextColor3 = on and Current.bg or Current.text
+			b.BackgroundTransparency = on and 0 or 0.2
+		end
+		draws[#draws + 1] = draw
+		hook(b, draw)
+		b.MouseButton1Click:Connect(function()
+			SettingsCur = sec.name
+			for _, d in ipairs(draws) do d() end
+			renderSettings()
+		end)
+	end
 end
 
 local function buildSettingsTab(page)
-	SettingsScroll = Scroll({Size = UDim2.fromScale(1, 1), Parent = page}); List(SettingsScroll, 6); padding(SettingsScroll, 0, 0, 8, 0)
+	SettingsSide = Scroll({Size = UDim2.new(0, 160, 1, 0), Parent = page}); List(SettingsSide, 4); padding(SettingsSide, 0, 0, 6, 0)
+	local div = New("Frame", {Position = UDim2.fromOffset(166, 0), Size = UDim2.new(0, 1, 1, 0), BackgroundTransparency = 0.7, Parent = page})
+	themed(div, {BackgroundColor3 = "accent"})
+	SettingsScroll = Scroll({Position = UDim2.fromOffset(176, 0), Size = UDim2.new(1, -176, 1, 0), Parent = page}); List(SettingsScroll, 6); padding(SettingsScroll, 0, 0, 8, 0)
+	Lib._renderSidebar()
 	renderSettings()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Eingaben (Keybinds, Open/Focus, Tab)
+-- Eingaben (Keybinds, Open/Focus, Tab, Escape)
 ---------------------------------------------------------------------------------------------------
 local Held = {}
 local function flip(cmd) if cmd.Toggle then return not cmd.On end return nil end
@@ -1837,7 +2384,9 @@ local function connectInput()
 			if input.KeyCode == Enum.KeyCode.Tab then acceptTop() end
 			return
 		end
-		if Listening or gpe or State == "loading" then return end
+		if Listening or State == "loading" then return end
+		if input.KeyCode == Enum.KeyCode.Escape and S.escClose and State == "full" then Lib:CloseWindow() return end
+		if gpe then return end
 		local kn = input.KeyCode.Name
 		if kn == S.openKey then Lib:ToggleWindow() return end
 		if kn == S.focusKey then Lib:FocusSearch() return end
@@ -1925,11 +2474,13 @@ function Lib:LoadDefaultCommands()
 	add({Name = "sit", Category = "Movement", Description = "Hinsetzen", Callback = function() local h = myHum() if h then h.Sit = true end end})
 	add({Name = "jump", Category = "Movement", Description = "Einmal springen", Callback = function() local h = myHum() if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end})
 	add({Name = "reset", Aliases = {"respawn", "die"}, Category = "Movement", Description = "Charakter zurücksetzen", Callback = function() local h = myHum() if h then h.Health = 0 end end})
+
+	-- Teleport
 	local savedPos
 	add({Name = "savepos", Category = "Teleport", Description = "Aktuelle Position merken", Callback = function() local r = myRoot() if r then savedPos = r.CFrame end end})
 	add({Name = "loadpos", Category = "Teleport", Description = "Zur gemerkten Position zurück", Callback = function()
 		local r = myRoot()
-		if r and savedPos then r.CFrame = savedPos else notify("loadpos", "Keine Position gespeichert", "error") end
+		if r and savedPos then r.CFrame = savedPos else error("Keine Position gespeichert") end
 	end})
 	add({Name = "goto", Aliases = {"tp"}, Category = "Teleport", Description = "Zu einem Spieler teleportieren", Args = {{Name = "player", Type = "player"}},
 		Callback = function(a)
@@ -1954,7 +2505,6 @@ function Lib:LoadDefaultCommands()
 	-- Camera
 	add({Name = "fov", Category = "Camera", Description = "Setzt das Field of View", Args = {N("size", 70, 1, 120)}, Callback = function(a) cam().FieldOfView = a.size end})
 	add({Name = "zoom", Category = "Camera", Description = "Maximale Zoom-Distanz", Args = {N("distance", 128, 1, 100000)}, Callback = function(a) LP.CameraMaxZoomDistance = a.distance end})
-	local viewing
 	add({Name = "view", Aliases = {"spectate"}, Category = "Camera", Description = "Kamera auf einen Spieler (an/aus)", Toggle = true, Args = {{Name = "player", Type = "player"}},
 		Callback = function(a, on)
 			if not on then local h = myHum() if h then cam().CameraSubject = h end return end
@@ -2026,6 +2576,14 @@ function Lib:LoadDefaultCommands()
 			if q == "custom" then S.theme = "Custom"; applyAppearance(false) return end
 			error("Theme nicht gefunden. Verfügbar: " .. table.concat(ThemeOrder, ", "))
 		end})
+	add({Name = "profile", Category = "UI", Description = "Lädt ein Profil (Aussehen + Command-Settings)", Args = {{Name = "name", Type = "string", Default = "Default"}},
+		Callback = function(a) if not Lib:LoadProfile(a.name) then error("Profil nicht gefunden") end end})
+	add({Name = "fullscreen", Aliases = {"fs"}, Category = "UI", Description = "Fullscreen-Modus an/aus", Toggle = true, Callback = function(_, on) Lib:SetFullscreen(on) end})
+	add({Name = "resetwindow", Category = "UI", Description = "Fenster in die Mitte setzen", Callback = function()
+		S.winX, S.winY = 0.5, 0.5
+		if State == "full" and not S.fullscreen then tw(Win, 0.4, {Position = UDim2.fromScale(0.5, 0.5)}) end
+		save()
+	end})
 	add({Name = "uiscale", Category = "UI", Description = "UI-Skalierung", Args = {N("scale", 1, 0.7, 1.3)}, Callback = function(a) S.uiScale = a.scale; applyAppearance(false) end})
 	add({Name = "opacity", Category = "UI", Description = "Fenster-Transparenz", Args = {N("value", 0.04, 0, 0.6)}, Callback = function(a) S.windowTransparency = a.value; applyAppearance(false) end})
 	add({Name = "notify", Category = "UI", Description = "Zeigt eine Benachrichtigung", Args = {{Name = "text", Type = "string", Default = "Hallo!"}}, Callback = function(a) notify("Notify", a.text) end})
@@ -2037,37 +2595,80 @@ function Lib:LoadDefaultCommands()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Start / Ladescreen / Unload
+-- Ladescreen (animierter Ring, Shimmer-Balken, Schritt-Log)
 ---------------------------------------------------------------------------------------------------
 local function runLoader(steps)
 	local dim = New("Frame", {Name = "Dim", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, ZIndex = 50, Active = true, Parent = Gui})
-	local card = New("CanvasGroup", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(380, 146), GroupTransparency = 1, ZIndex = 51, Parent = dim})
-	themed(card, {BackgroundColor3 = "panel"}); corner(card, 1.5); stroke(card, 0.35)
-	Label({Text = Lib.Name:upper(), Font = Enum.Font.GothamBlack, TextSize = 22, Position = UDim2.fromOffset(20, 14), Size = UDim2.new(1, -40, 0, 28), ZIndex = 52, Parent = card}, "accent")
-	local stepLbl = Label({Text = "Starte…", Position = UDim2.fromOffset(20, 54), Size = UDim2.new(1, -110, 0, 20), TextSize = 13, ZIndex = 52, Parent = card}, "text")
-	local pct = Label({Text = "0%", Position = UDim2.new(1, -90, 0, 54), Size = UDim2.fromOffset(70, 20), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 52, Parent = card}, "accent")
-	local track = New("Frame", {Position = UDim2.fromOffset(20, 90), Size = UDim2.new(1, -40, 0, 8), BackgroundTransparency = 0, ZIndex = 52, Parent = card})
-	themed(track, {BackgroundColor3 = "bg"}); New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = track})
-	local fill = New("Frame", {Size = UDim2.new(0, 0, 1, 0), BackgroundTransparency = 0, ZIndex = 53, Parent = track})
-	themed(fill, {BackgroundColor3 = "accent"}); New("UICorner", {CornerRadius = UDim.new(1, 0), Parent = fill})
-	local counter = Label({Text = "Schritt 0 / " .. #steps, TextSize = 11, Position = UDim2.fromOffset(20, 108), Size = UDim2.new(1, -40, 0, 18), ZIndex = 52, Parent = card}, "sub")
-	tw(dim, 0.6, {BackgroundTransparency = 0.45}); tw(card, 0.6, {GroupTransparency = 0})
-	task.wait(0.8)
+	local card = New("CanvasGroup", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.54), Size = UDim2.fromOffset(460, 288), GroupTransparency = 1, ZIndex = 51, Parent = dim})
+	themed(card, {BackgroundColor3 = "panel"}); corner(card, 1.7); stroke(card, 0.3)
+
+	local topLine = New("Frame", {Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 52, Parent = card})
+	local tlg = New("UIGradient", {Transparency = NumberSequence.new({NSK(0, 1), NSK(0.5, 0), NSK(1, 1)}), Parent = topLine})
+	hook(topLine, function() tlg.Color = ColorSequence.new(Current.accent) end)
+
+	local ring0 = New("Frame", {AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 24), Size = UDim2.fromOffset(66, 66), BackgroundTransparency = 1, ZIndex = 52, Parent = card})
+	round_(ring0); New("UIStroke", {Thickness = 4, Transparency = 0.85, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Color3.new(1, 1, 1), Parent = ring0})
+	local ring = New("Frame", {AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 24), Size = UDim2.fromOffset(66, 66), BackgroundTransparency = 1, ZIndex = 53, Parent = card})
+	round_(ring)
+	local rs = New("UIStroke", {Thickness = 4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = ring})
+	themed(rs, {Color = "accent"})
+	local rg = New("UIGradient", {Transparency = NumberSequence.new({NSK(0, 0), NSK(0.5, 0.2), NSK(0.72, 1), NSK(1, 1)}), Parent = rs})
+	Label({Text = Lib.Name:sub(1, 1):upper(), Font = Enum.Font.GothamBlack, TextSize = 26, Position = UDim2.new(0.5, -33, 0, 24), Size = UDim2.fromOffset(66, 66),
+		TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 53, Parent = card}, "accent")
+
+	local spaced = {}
+	for ch in Lib.Name:upper():gmatch(".") do spaced[#spaced + 1] = ch end
+	local title = Label({Text = table.concat(spaced, " "), Font = Enum.Font.GothamBlack, TextSize = 20, Position = UDim2.fromOffset(0, 100), Size = UDim2.new(1, 0, 0, 26),
+		TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 52, Parent = card}, "text")
+	title.TextTransparency = 1
+	Label({Text = "Command UI  •  v" .. Lib.Version, TextSize = 11, Position = UDim2.fromOffset(0, 126), Size = UDim2.new(1, 0, 0, 14),
+		TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 52, Parent = card}, "sub")
+	local stepLbl = Label({Text = "Starte…", TextSize = 13, Position = UDim2.fromOffset(28, 152), Size = UDim2.new(1, -120, 0, 18), ZIndex = 52, Parent = card}, "text")
+	local pct = Label({Text = "0%", Font = Enum.Font.GothamBold, Position = UDim2.new(1, -90, 0, 152), Size = UDim2.fromOffset(62, 18), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 52, Parent = card}, "accent")
+	local track_ = New("Frame", {Position = UDim2.fromOffset(28, 176), Size = UDim2.new(1, -56, 0, 8), BackgroundTransparency = 0, ZIndex = 52, Parent = card})
+	themed(track_, {BackgroundColor3 = "bg"}); round_(track_)
+	local fill = New("Frame", {Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 53, Parent = track_})
+	round_(fill)
+	local fg = New("UIGradient", {Parent = fill})
+	hook(fill, function() fg.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Current.accent), ColorSequenceKeypoint.new(0.5, Current.text), ColorSequenceKeypoint.new(1, Current.accent)}) end)
+	local counter = Label({Text = "Schritt 0 / " .. #steps, TextSize = 11, Position = UDim2.fromOffset(28, 190), Size = UDim2.new(1, -56, 0, 14), ZIndex = 52, Parent = card}, "sub")
+	local log = New("Frame", {Position = UDim2.fromOffset(28, 214), Size = UDim2.new(1, -56, 0, 60), BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 52, Parent = card})
+	List(log, 2, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Bottom)
+
+	local t0 = os.clock()
+	local lc = RunService.Heartbeat:Connect(function(dt)
+		rg.Rotation = (rg.Rotation + dt * 300) % 360
+		fg.Offset = Vector2.new(((os.clock() - t0) * 0.8) % 2 - 1, 0)
+	end)
+	tw(dim, 0.7, {BackgroundTransparency = 0.4}); tw(card, 0.7, {GroupTransparency = 0, Position = UDim2.fromScale(0.5, 0.5)})
+	tw(title, 1.0, {TextTransparency = 0})
+	task.wait(0.9)
+	local lines = {}
 	for i, st in ipairs(steps) do
 		stepLbl.Text = st[1] .. "…"; counter.Text = "Schritt " .. i .. " / " .. #steps
 		local ok, err = pcall(st[2])
-		if not ok then warn("[NeonCmd] Schritt '" .. st[1] .. "' fehlgeschlagen: " .. tostring(err)); stepLbl.Text = "⚠ " .. st[1] .. " (Fehler, siehe Konsole)" end
-		tw(fill, 0.45, {Size = UDim2.new(i / #steps, 0, 1, 0)})
+		if not ok then warn("[NeonCmd] Schritt '" .. st[1] .. "' fehlgeschlagen: " .. tostring(err)) end
+		tw(fill, 0.5, {Size = UDim2.new(i / #steps, 0, 1, 0)})
 		pct.Text = math.floor(i / #steps * 100) .. "%"
+		local line = Label({Text = (ok and "✓  " or "⚠  ") .. st[1], TextSize = 12, Size = UDim2.new(1, 0, 0, 14), LayoutOrder = i, ZIndex = 53, Parent = log}, ok and "accent" or "sub")
+		line.TextTransparency = 1
+		tw(line, 0.35, {TextTransparency = ok and 0.15 or 0.4})
+		lines[#lines + 1] = line
+		if #lines > 4 then local o = table.remove(lines, 1); tw(o, 0.2, {TextTransparency = 1}); task.delay(0.25, function() o:Destroy() end) end
 		task.wait(0.55)
 	end
-	stepLbl.Text = "Fertig"
-	task.wait(0.6)
-	tw(card, 0.5, {GroupTransparency = 1}); tw(dim, 0.6, {BackgroundTransparency = 1})
+	stepLbl.Text = "Bereit"
 	task.wait(0.7)
+	tw(card, 0.55, {GroupTransparency = 1, Position = UDim2.fromScale(0.5, 0.46)}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+	tw(dim, 0.7, {BackgroundTransparency = 1})
+	task.wait(0.8)
+	lc:Disconnect()
 	dim:Destroy()
 end
 
+---------------------------------------------------------------------------------------------------
+-- Start / Unload
+---------------------------------------------------------------------------------------------------
 function Lib:Start(cfg)
 	if Lib.Built then return end
 	Lib.Built = true
@@ -2081,16 +2682,13 @@ function Lib:Start(cfg)
 	Gui.Parent = container
 	Lib.Gui = Gui
 
+	local missingReport
 	local steps = {
 		{"Lade gespeicherte Daten", function()
 			loadData()
 			History = Data.history
-			Current = resolveTheme()
-		end},
-		{"Wende Startprofil an", function()
-			local p = Data.profiles[S.startProfile] or Data.profiles.Default
 			ActiveProfile = Data.profiles[S.startProfile] and S.startProfile or "Default"
-			if p then for _, k in ipairs(APPEARANCE) do if p[k] ~= nil then S[k] = deepcopy(p[k]) end end end
+			ProfSel = ActiveProfile
 			applyTheme(false)
 		end},
 		{"Baue Fenster", function()
@@ -2106,42 +2704,56 @@ function Lib:Start(cfg)
 			if cfg.DefaultCommands ~= false then Lib:LoadDefaultCommands() end
 			buildCommandsTab(Pages["Commands"])
 		end},
+		{"Wende Startprofil an", function()
+			local p = Data.profiles[ActiveProfile]
+			if p then
+				local missing = applyProfile(p)
+				if #missing > 0 then missingReport = {ActiveProfile, missing} end
+			end
+			for cmd in pairs(CmdRows) do refreshRow(cmd, true); layoutRow(cmd) end
+			applyCmdFilter()
+			applyTheme(false)
+		end},
 		{"Erstelle Tabs", function()
 			buildGameTab(Pages["Game"]); updateGameRows()
 			buildPlayersTab(Pages["Players"])
 			buildQuickToolsTab(Pages["Quick Tools"]); refreshQTList()
 			buildSettingsTab(Pages["Settings"])
-			QTPicker.Visible = false
-			-- Event-Picker bei jedem Oeffnen neu fuellen
-			local old = QTPicker:GetPropertyChangedSignal("Visible")
-			old:Connect(function() if QTPicker.Visible then fillEventPicker(function(ev)
-				local trigTarget = Lib._pickTarget
-				if trigTarget then trigTarget(ev) end
-			end) end end)
 		end},
 		{"Verbinde Eingaben & Events", function()
 			connectInput()
 			restartTriggers()
-			local acc = 0
+			local acc, bgAcc, gameAcc = 0, 0, 0
 			track(RunService.Heartbeat:Connect(function(dt)
 				FPS = FPS + (1 / math.max(dt, 1e-4) - FPS) * 0.05
-				bgStep(dt)
-				acc = acc + dt
-				if acc >= 0.15 then
-					acc = 0
-					pollTriggers()
-					if CurrentTab == "Game" and State == "full" then updateGameRows() end
+				if Pending.theme then Pending.theme = false; applyTheme(true) end
+				if State == "full" then
+					bgAcc = bgAcc + dt
+					if bgAcc >= 1 / math.max(S.bgFps, 10) then bgStep(bgAcc); bgAcc = 0 end
+					if CurrentTab == "Game" then
+						gameAcc = gameAcc + dt
+						if gameAcc >= 1 then gameAcc = 0; updateGameRows() end
+					end
+				end
+				if #PollList > 0 then
+					acc = acc + dt
+					if acc >= 0.15 then acc = 0; pollTriggers() end
 				end
 				if State == "semi" and S.idleHide > 0 and not Semi.Focused and not Semi.Hover and os.clock() - LastActive > S.idleHide then
 					setState("hidden")
 				end
 			end))
 		end},
-		{"Starte Hintergrund-Animationen", function() setBgMode(S.bgAnim); applyAppearance(true) end},
+		{"Starte Animationen", function()
+			setBgMode(S.bgAnim); applyAppearance(true)
+			if FSButton then FSButton.Text = S.fullscreen and "❐" or "⛶" end
+			if Commands.fullscreen then Commands.fullscreen.On = S.fullscreen; refreshRow(Commands.fullscreen, true) end
+		end},
 		{"Finalisiere", function()
 			if S.autoStart then
 				for _, cmd in ipairs(CommandList) do
-					if Data.commands[cmd.Name] and Data.commands[cmd.Name].autostart then Lib:RunCommand(cmd, nil, cmd.Toggle and true or nil, true) end
+					local st = Data.commands[cmd.Name]
+					if st and st.autostart then Lib:RunCommand(cmd, nil, cmd.Toggle and true or nil, true) end
 				end
 			end
 		end},
@@ -2154,14 +2766,16 @@ function Lib:Start(cfg)
 		setState("semi")
 	end
 	notify(Lib.Name, "Geladen – " .. S.openKey .. " öffnet das Fenster, " .. S.focusKey .. " die Suche")
+	if missingReport then reportMissing(missingReport[1], missingReport[2]) end
 end
 
 function Lib:Unload()
 	pcall(function() for _, cmd in ipairs(CommandList) do if cmd.Toggle and cmd.On then Lib:RunCommand(cmd, nil, false, true) end end end)
 	pcall(stopSpectate)
-	for p, h in pairs(Highlights) do pcall(function() h.hl:Destroy(); h.conn:Disconnect() end) end
+	for _, h in pairs(Highlights) do pcall(function() h.hl:Destroy(); h.conn:Disconnect() end) end
 	for _, c in ipairs(Runtime) do pcall(c) end
 	Runtime, PollList = {}, {}
+	if themeConn then pcall(function() themeConn:Disconnect() end) end
 	for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
 	Connections = {}
 	pcall(function() FS.save(Data) end)
