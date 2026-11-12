@@ -1,27 +1,28 @@
 --[[
-	CGui – GUI-Library für Roblox (Luau)
-	Dunkles Türkis, Ladescreen, Key-System, Tabs, Sub-Settings, Notifications
+	CGui v2.0  -  GUI-Library fuer Roblox (Luau)
 
-	local CGui = loadstring(game:HttpGet("DEINE_URL"))()   -- oder Code direkt einfügen
+	local CGui = loadstring(game:HttpGet("DEINE_URL"))()
+	CGui:LoadLucide()                       -- optional: Lucide-Icons
+	CGui:SetTheme("Midnight")               -- Presets: Teal, Light, Midnight (+ Themes-Addon)
 
 	local Window = CGui:CreateWindow({
-		Name = "Settings",
-		Version = "v1.0",                      -- leer = wird ignoriert
-		ToggleKey = Enum.KeyCode.RightShift,   -- GUI öffnen/schließen
-		LoadTime = 5,
-		KeySystem = { Enabled = false, Key = "abc" },  -- oder KeyUrl = "https://..."
+		Name = "Settings", Version = "v2.0",
+		ToggleKey = Enum.KeyCode.RightShift,
+		LoadTime = 3,
+		CloseAction = "Ask",        -- "Ask" (Abfrage), "Hide" oder "Destroy"
+		PromptScope = "Window",     -- Abfragen nur im "Window" oder ueber dem ganzen "Screen"
+		KeySystem = { Enabled = false, Key = "abc" },
 	})
 
-	local Tab = Window:AddTab({ Name = "Main", Icon = "rbxassetid://...", Description = "Hauptseite" })
+	local Tab = Window:AddTab({ Name = "Main", Icon = "home", Description = "Hauptseite" })
 	Tab:AddSection("Allgemein")
-	local btn = Tab:AddButton({ Name = "Test", Description = "Beschreibung", Callback = function() end })
-	local sub = btn:SubSettings("Test – Einstellungen")   -- Rechtsklick auf den Button
-	sub:AddToggle({ Name = "Extra", Callback = print })
-	Tab:AddTextBox({ Name = "Name", Placeholder = "Text...", Callback = function(text, enter) end })
+	Tab:AddLabel({ Title = "Info", Text = "Reine Textanzeige (kein Button)", Style = "Info" })
+	Tab:AddButton({ Name = "Test", Callback = function() end })
+	Tab:AddToggle({ Name = "Option", Flag = "opt", Callback = print })
+	Tab:AddDropdown({ Name = "Modus", Options = { "A", "B", "C" }, Mode = "Inline" })  -- alle Optionen sichtbar
 
-	CGui:SetTheme("Light")                                  -- Presets: Teal, Light, Midnight
-	CGui:SetTheme({ Accent = Color3.fromRGB(255, 80, 120) })  -- einzelne Farben aendern
-	CGui.Theme.Stroke = Color3.fromRGB(40, 40, 40)           -- direkt setzen geht auch
+	Window:Prompt({ Title = "Frage", Content = "Sicher?", Options = { "Ja", "Nein" }, Scope = "Screen" })
+	Window.Settings:AddToggle({ Name = "Eigene Option" })   -- eigene Elemente im integrierten Settings-Panel
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -31,9 +32,10 @@ local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local TextService = game:GetService("TextService")
 local GuiService = game:GetService("GuiService")
+local HttpService = game:GetService("HttpService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local CGui = { Version = "1.2.1", _windows = {} }
+local CGui = { Version = "2.0.0", _windows = {} }
 
 -- Theme-System: CGui.Theme / CGui:SetTheme(...) wirken live auf bestehende Fenster
 local Presets = {
@@ -45,6 +47,7 @@ local Presets = {
 		Text = Color3.fromRGB(226, 245, 243), SubText = Color3.fromRGB(130, 172, 170),
 		OnAccent = Color3.fromRGB(255, 255, 255), Error = Color3.fromRGB(224, 92, 92),
 		Overlay = Color3.fromRGB(4, 12, 14),
+		Success = Color3.fromRGB(64, 200, 128), Warning = Color3.fromRGB(240, 180, 60),
 		LoadBg = Color3.fromRGB(3, 9, 18), LoadBg2 = Color3.fromRGB(4, 20, 30),
 	},
 	Light = {
@@ -55,6 +58,7 @@ local Presets = {
 		Text = Color3.fromRGB(22, 38, 42), SubText = Color3.fromRGB(92, 118, 122),
 		OnAccent = Color3.fromRGB(255, 255, 255), Error = Color3.fromRGB(206, 60, 60),
 		Overlay = Color3.fromRGB(214, 224, 226),
+		Success = Color3.fromRGB(30, 150, 90), Warning = Color3.fromRGB(200, 130, 0),
 		LoadBg = Color3.fromRGB(236, 244, 245), LoadBg2 = Color3.fromRGB(220, 236, 238),
 	},
 	Midnight = {
@@ -65,6 +69,7 @@ local Presets = {
 		Text = Color3.fromRGB(232, 234, 250), SubText = Color3.fromRGB(140, 146, 190),
 		OnAccent = Color3.fromRGB(255, 255, 255), Error = Color3.fromRGB(240, 100, 110),
 		Overlay = Color3.fromRGB(6, 6, 14),
+		Success = Color3.fromRGB(80, 210, 140), Warning = Color3.fromRGB(255, 190, 80),
 		LoadBg = Color3.fromRGB(5, 6, 16), LoadBg2 = Color3.fromRGB(14, 12, 34),
 	},
 }
@@ -83,7 +88,7 @@ local Theme = setmetatable({}, {
 CGui.Theme = Theme
 
 local THEME_ORDER = { "Main", "Topbar", "Element", "ElementHover", "Stroke", "Off", "Accent", "AccentHover",
-	"Text", "SubText", "OnAccent", "Error", "Overlay", "LoadBg", "LoadBg2" }
+	"Text", "SubText", "OnAccent", "Error", "Success", "Warning", "Overlay", "LoadBg", "LoadBg2" }
 local COLOR_PROPS = {
 	Frame = { "BackgroundColor3" },
 	TextLabel = { "BackgroundColor3", "TextColor3" },
@@ -149,17 +154,33 @@ function CGui:ApplyTheme()
 		end
 	end
 	for k, v in pairs(ThemeStore) do applied[k] = v end
+	for _, w in ipairs(self._windows) do
+		for _, h in ipairs(w._themeHooks or {}) do pcall(h) end
+	end
 end
 
 -- Name eines Presets ("Teal", "Light", "Midnight") oder eine (auch teilweise) Tabelle
 function CGui:SetTheme(t)
+	local name
 	if type(t) == "string" then
 		local preset = Presets[t]
 		if not preset then warn("[CGui] Unbekanntes Theme: " .. t); return end
+		name = t
 		t = preset
 	end
 	for k, v in pairs(t) do ThemeStore[k] = v end
+	CGui.CurrentTheme = name
 	self:ApplyTheme()
+	for _, w in ipairs(self._windows) do
+		if w._themeDD and name then w._themeDD:Set(name, true) end
+	end
+end
+
+function CGui:GetThemeNames()
+	local n = {}
+	for k in pairs(Presets) do n[#n + 1] = k end
+	table.sort(n)
+	return n
 end
 
 function CGui:GetTheme()
@@ -174,6 +195,15 @@ function CGui:RegisterTheme(name, t)
 	for k, v in pairs(Presets.Teal) do full[k] = v end
 	for k, v in pairs(t) do full[k] = v end
 	Presets[name] = full
+	if not self._themeRefresh then
+		self._themeRefresh = true
+		task.defer(function()
+			self._themeRefresh = false
+			for _, w in ipairs(self._windows) do
+				if w._themeDD then w._themeDD:Refresh(self:GetThemeNames(), true) end
+			end
+		end)
+	end
 end
 
 --------------------------------------------------------------------
@@ -373,6 +403,82 @@ local function padSlider(win, area, knob, onStep)
 		function() tween(knob, 0.15, { Size = UDim2.fromOffset(14, 14) }) end)
 end
 
+-- Zeichnet ein X aus zwei Linien (keine Glyph-Abhaengigkeit)
+local function drawX(parent, size, color, thickness)
+	local holder = new("Frame", {
+		BackgroundTransparency = 1, Size = UDim2.fromOffset(size, size), AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5), Parent = parent,
+	})
+	local lines = {}
+	for i, rot in ipairs({ 45, -45 }) do
+		lines[i] = new("Frame", {
+			BackgroundColor3 = color, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(math.floor(size * 1.3), thickness or 2),
+			Rotation = rot, Parent = holder,
+		}, { corner(1) })
+	end
+	return holder, lines
+end
+
+-- Pfeil nach rechts (">") aus zwei Linien, rechts im Header
+local function drawChevron(parent, color)
+	local holder = new("Frame", {
+		BackgroundTransparency = 1, Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -22, 0.5, 0), Parent = parent,
+	})
+	local lines = {}
+	for i, def in ipairs({ { -3, 45 }, { 3, -45 } }) do
+		lines[i] = new("Frame", {
+			BackgroundColor3 = color, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, -1, 0.5, def[1]), Size = UDim2.fromOffset(8, 2), Rotation = def[2], Parent = holder,
+		}, { corner(1) })
+	end
+	return holder, lines
+end
+
+-- Rahmen mit umlaufendem Farbverlauf (Rotation wird im Render-Loop gesetzt)
+local function spinBorder(frame, thickness)
+	local st = new("UIStroke", {
+		Color = Color3.fromRGB(255, 255, 255), NoTheme = true, Thickness = thickness or 1.5,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = frame,
+	})
+	local g = new("UIGradient", { Parent = st })
+	local function paint()
+		g.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Theme.Stroke), ColorSequenceKeypoint.new(0.35, Theme.Stroke),
+			ColorSequenceKeypoint.new(0.5, Theme.Accent),
+			ColorSequenceKeypoint.new(0.65, Theme.Stroke), ColorSequenceKeypoint.new(1, Theme.Stroke),
+		})
+	end
+	paint()
+	return g, paint, st
+end
+
+-- Hoehe eines Frames automatisch an den Inhalt (UIListLayout) anpassen
+local function autoHeight(frame, layout, extra, minH, animate)
+	local function upd()
+		local h = math.max(minH or 0, layout.AbsoluteContentSize.Y + (extra or 0))
+		local sz = UDim2.new(frame.Size.X.Scale, frame.Size.X.Offset, 0, h)
+		if animate and frame.Visible then tween(frame, 0.2, { Size = sz }) else frame.Size = sz end
+	end
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(upd)
+	task.defer(upd)
+end
+
+local function mergeSnap(a, b)
+	for k, v in pairs(b) do a[k] = v end
+	return a
+end
+
+local function fsOk()
+	return (writefile and readfile and isfolder and makefolder and isfile and listfiles) and true or false
+end
+
+local function cleanName(s)
+	local c = tostring(s):gsub("[^%w%-_ ]", "")
+	return c
+end
+
 local Window = {}; Window.__index = Window
 local Container = {}; Container.__index = Container            -- gemeinsame Element-Methoden
 local Tab = setmetatable({}, { __index = Container }); Tab.__index = Tab
@@ -555,17 +661,18 @@ function Window:Toggle(state)
 	self.Visible = state
 	self._fade = (self._fade or 0) + 1
 	local token = self._fade
-	local main, scale = self.Main, self.Scale
+	local main, scale, sf = self.Main, self.Scale, self.SettingsFrame
+	local us = self.UserScale or 1
 	self:_HideTip()
 	if state then
 		if self._snap then fadeSet(self._snap, 0); self._snap = nil end
-		local snap = fadeCapture(main)
+		local snap = mergeSnap(fadeCapture(main), fadeCapture(sf))
 		self._rest = snap
 		self._openedAt = os.clock()
 		fadeSet(snap, 1)
 		main.Visible = true
-		scale.Scale = 0.9
-		tween(scale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
+		scale.Scale = 0.9 * us
+		tween(scale, 0.45, { Scale = us }, Enum.EasingStyle.Back)
 		fadeTween(snap, 0.35, 0)
 		if isGamepadActive() then
 			task.delay(0.45, function()
@@ -577,23 +684,460 @@ function Window:Toggle(state)
 	else
 		if self._stopEdit then self._stopEdit() end
 		local sel = GuiService.SelectedObject
-		if sel and sel:IsDescendantOf(main) then GuiService.SelectedObject = nil end
+		if sel and (sel:IsDescendantOf(main) or sel:IsDescendantOf(sf)) then GuiService.SelectedObject = nil end
 		if self._rest and os.clock() - (self._openedAt or 0) < 0.4 then fadeSet(self._rest, 0) end
-		local snap = fadeCapture(main)
+		local snap = mergeSnap(fadeCapture(main), fadeCapture(sf))
 		self._snap = snap
-		tween(scale, 0.3, { Scale = 0.92 })
+		tween(scale, 0.3, { Scale = 0.92 * us })
 		fadeTween(snap, 0.3, 1)
 		task.delay(0.33, function()
 			if self._fade == token then
 				fadeSet(snap, 0)
 				self._snap = nil
 				main.Visible = false
+				sf.Visible = false
 			end
 		end)
 	end
 end
 
 function Window:SetTheme(t) CGui:SetTheme(t) end
+
+function Window:SetUIScale(s)
+	s = math.clamp(tonumber(s) or 1, 0.5, 2)
+	self.UserScale = s
+	if self.Visible then tween(self.Scale, 0.2, { Scale = s }) else self.Scale.Scale = s end
+end
+
+function Window:SetBackgroundTransparency(a)
+	a = math.clamp(tonumber(a) or 0, 0, 0.8)
+	self.Main.BackgroundTransparency = a
+	self.Topbar.BackgroundTransparency = a
+end
+
+function Window:CenterWindow()
+	local cam = workspace.CurrentCamera
+	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+	tween(self.Main, 0.4, { Position = UDim2.fromOffset(math.floor(vp.X / 2), math.floor(vp.Y / 2)) })
+end
+
+function Window:GetSettings() return self.Settings end
+
+-- Settings-Panel hinter dem Hauptfenster ein-/ausschieben
+function Window:ToggleSettings(state)
+	if state == nil then state = not self._settingsOpen end
+	self._settingsOpen = state
+	self._sTarget = state and 1 or 0
+	tween(self.SettingsBtn, 0.25, { BackgroundColor3 = state and Theme.Accent or Theme.Element })
+	tween(self.SettingsBtnLabel, 0.25, { TextColor3 = state and Theme.OnAccent or Theme.Text })
+	if state and isGamepadActive() then
+		task.delay(0.4, function()
+			for _, inst in ipairs(self.Settings.Page:GetDescendants()) do
+				if inst:IsA("TextButton") and inst.Selectable and inst.Visible then
+					GuiService.SelectedObject = inst
+					break
+				end
+			end
+		end)
+	end
+end
+
+-- Schliessen / Verstecken
+function Window:Show() self:Toggle(true) end
+
+function Window:Hide()
+	self:Toggle(false)
+	if self.ToggleKey then
+		self:Notify({
+			Title = self.Name, Type = "CGui", Duration = 4,
+			Content = "Versteckt. Mit " .. self.ToggleKey.Name .. " wieder öffnen.",
+		})
+	end
+end
+
+function Window:Close()
+	if not self.Ready then self:Destroy(); return end
+	self:Toggle(false)
+	task.delay(0.45, function() self:Destroy() end)
+end
+
+function Window:RequestClose()
+	local mode = self.CloseAction
+	if mode == "Hide" then self:Hide(); return end
+	if mode == "Destroy" then self:Close(); return end
+	self:Prompt({
+		Title = "Fenster schließen?",
+		Content = "Was möchtest du mit diesem Fenster tun?",
+		Scope = self.PromptScope,
+		Options = {
+			{ Text = "Abbrechen" },
+			{ Text = "Komplett schließen", Style = "Danger", Callback = function() self:Close() end },
+			{ Text = "Verstecken", Style = "Primary", Callback = function() self:Hide() end },
+		},
+	})
+end
+
+--------------------------------------------------------------------
+-- Prompt (Abfrage mit 1-6 Optionen und X)
+--------------------------------------------------------------------
+-- Window:Prompt({
+--     Title = "Frage", Content = "Text", Scope = "Window" | "Screen",
+--     Options = { "Ja", "Nein" }  oder  { { Text = "Loeschen", Style = "Danger", Callback = fn }, ... },  -- Style: Normal, Primary, Danger
+--     Cancelable = true, OnCancel = fn, Callback = function(text, index) end,
+--     Yield = false   -- true: wartet und gibt (text, index) zurueck (nil bei Abbruch)
+-- })
+function Window:CreatePrompt(opts)
+	local p = { Opts = opts or {}, Window = self }
+	function p:Show() self.Window:_QueuePrompt(self); return self end
+	function p:Close() if self._close then self._close() end end
+	return p
+end
+
+function Window:Prompt(opts)
+	local p = self:CreatePrompt(opts)
+	p:Show()
+	if opts and opts.Yield then
+		repeat task.wait() until p.Done or self.Destroyed
+		return p.Result, p.Index
+	end
+	return p
+end
+
+function Window:_QueuePrompt(p)
+	table.insert(self._promptQueue, p)
+	if not self._activePrompt then self:_NextPrompt() end
+end
+
+function Window:_NextPrompt()
+	local p = table.remove(self._promptQueue, 1)
+	if p then self:_ShowPrompt(p) end
+end
+
+function Window:_ShowPrompt(p)
+	local o = p.Opts
+	local screen = (o.Scope or self.PromptScope) == "Screen"
+	local parent = screen and self.Gui or self.Main
+	local cancelable = o.Cancelable ~= false
+
+	local options = {}
+	for i, v in ipairs(o.Options or { "OK" }) do
+		if i > 6 then break end
+		options[i] = (type(v) == "table") and v or { Text = tostring(v) }
+	end
+	if #options == 0 then options[1] = { Text = "OK" } end
+
+	local overlay = new("Frame", {
+		Name = "CGuiPrompt", BackgroundColor3 = Theme.Overlay, BackgroundTransparency = 0.3, BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1), Active = true, ZIndex = screen and 200 or 150, Parent = parent,
+	}, screen and {} or { corner(14) })
+
+	local CARD_W = 360
+	local card = new("Frame", {
+		BackgroundColor3 = Theme.Main, BorderSizePixel = 0, Size = UDim2.fromOffset(CARD_W, 120), Parent = overlay,
+	}, { corner(14), stroke(Theme.Accent, 1, 0.4) })
+	local inner = new("Frame", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(20, 18), Size = UDim2.new(1, -40, 0, 0), Parent = card,
+	})
+	local layout = new("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = inner })
+
+	new("TextLabel", {
+		LayoutOrder = 1, BackgroundTransparency = 1, Size = UDim2.new(1, -34, 0, 22), Text = o.Title or "Hinweis",
+		Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd, Parent = inner,
+	})
+	if o.Content and o.Content ~= "" then
+		new("TextLabel", {
+			LayoutOrder = 2, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+			Text = o.Content, Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = Theme.SubText, TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+			RichText = o.RichText == true, Parent = inner,
+		})
+	end
+
+	local n = #options
+	local cols = (n == 1 and 1) or (n == 2 and 2) or (n == 3 and 3) or (n == 4 and 2) or 3
+	local rows = math.ceil(n / cols)
+	local grid = new("Frame", {
+		LayoutOrder = 3, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, rows * 36 + (rows - 1) * 8), Parent = inner,
+	})
+	new("UIGridLayout", {
+		CellPadding = UDim2.fromOffset(8, 8), CellSize = UDim2.new(1 / cols, -(8 * (cols - 1)) / cols, 0, 36),
+		SortOrder = Enum.SortOrder.LayoutOrder, FillDirectionMaxCells = cols, Parent = grid,
+	})
+
+	-- Position: immer auf ganzen Pixeln (scharfer Text)
+	local placed = false
+	local function place()
+		local h = layout.AbsoluteContentSize.Y + 38
+		card.Size = UDim2.fromOffset(CARD_W, h)
+		local pw, ph
+		if screen then
+			pw, ph = self.Gui.AbsoluteSize.X, self.Gui.AbsoluteSize.Y
+		else
+			pw, ph = self.Main.Size.X.Offset, self.Main.Size.Y.Offset
+		end
+		local tx, ty = math.floor((pw - CARD_W) / 2), math.floor((ph - h) / 2)
+		if not placed then
+			placed = true
+			card.Position = UDim2.fromOffset(tx, ty + 18)
+			tween(card, 0.35, { Position = UDim2.fromOffset(tx, ty) })
+		else
+			card.Position = UDim2.fromOffset(tx, ty)
+		end
+	end
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(place)
+	task.defer(place)
+
+	local closed = false
+	local function finish(opt, idx)
+		if closed then return end
+		closed = true
+		self._activePrompt = nil
+		p.Done, p.Result, p.Index = true, opt and tostring(opt.Text or "") or nil, idx
+		local sel = GuiService.SelectedObject
+		if sel and sel:IsDescendantOf(overlay) then GuiService.SelectedObject = nil end
+		fadeTween(fadeCapture(overlay), 0.2, 1)
+		task.delay(0.22, function()
+			overlay:Destroy()
+			if opt then
+				safe(opt.Callback, opt.Text, idx)
+				safe(o.Callback, opt.Text, idx)
+			else
+				safe(o.OnCancel)
+			end
+			self:_NextPrompt()
+		end)
+	end
+	p._close = function() finish(nil, nil) end
+	p._cancel = cancelable and p._close or nil
+	self._activePrompt = p
+
+	if cancelable then
+		local x = new("TextButton", {
+			BackgroundColor3 = Theme.Element, AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(26, 26),
+			Position = UDim2.new(1, -38, 0, 14), Parent = card,
+		}, { corner(8) })
+		local _, lines = drawX(x, 10, Theme.SubText, 2)
+		local function xin()
+			tween(x, 0.15, { BackgroundColor3 = Theme.Error })
+			for _, l in ipairs(lines) do tween(l, 0.15, { BackgroundColor3 = Theme.OnAccent }) end
+		end
+		local function xout()
+			tween(x, 0.15, { BackgroundColor3 = Theme.Element })
+			for _, l in ipairs(lines) do tween(l, 0.15, { BackgroundColor3 = Theme.SubText }) end
+		end
+		x.MouseEnter:Connect(xin)
+		x.MouseLeave:Connect(xout)
+		selectFX(self, x, xin, xout)
+		x.Activated:Connect(function() finish(nil, nil) end)
+	end
+
+	local first
+	for i, opt in ipairs(options) do
+		local style = opt.Style or "Normal"
+		local btn = new("TextButton", {
+			BackgroundColor3 = (style == "Primary" and Theme.Accent) or (style == "Danger" and Theme.Error) or Theme.Off,
+			AutoButtonColor = false, Text = tostring(opt.Text or "Option"), Font = Enum.Font.GothamMedium, TextSize = 13,
+			TextColor3 = (style == "Normal") and Theme.Text or Theme.OnAccent, TextTruncate = Enum.TextTruncate.AtEnd,
+			LayoutOrder = i, Parent = grid,
+		}, { corner(9), padding(8, 0, 8, 0) })
+		local function bin() tween(btn, 0.15, { BackgroundTransparency = 0.2 }) end
+		local function bout() tween(btn, 0.15, { BackgroundTransparency = 0 }) end
+		btn.MouseEnter:Connect(bin)
+		btn.MouseLeave:Connect(bout)
+		selectFX(self, btn, bin, bout)
+		btn.Activated:Connect(function() finish(opt, i) end)
+		first = first or btn
+	end
+
+	local snap = fadeCapture(overlay)
+	fadeSet(snap, 1)
+	fadeTween(snap, 0.25, 0)
+	if isGamepadActive() and first then
+		task.defer(function() GuiService.SelectedObject = first end)
+	end
+end
+
+--------------------------------------------------------------------
+-- Konfigurationen (Executor: writefile / readfile)
+--------------------------------------------------------------------
+function Window:_Dir()
+	if not isfolder("CGui") then makefolder("CGui") end
+	local d = "CGui/" .. cleanName(self.Name)
+	if not isfolder(d) then makefolder(d) end
+	return d
+end
+
+function Window:ListConfigs()
+	local out = {}
+	if not fsOk() then return out end
+	local ok, files = pcall(function() return listfiles(self:_Dir()) end)
+	if ok and files then
+		for _, f in ipairs(files) do
+			local n = tostring(f):match("([^/\\]+)%.json$")
+			if n then table.insert(out, n) end
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+function Window:SaveConfig(name)
+	if not fsOk() then return false, "Dateisystem nicht verfügbar" end
+	name = cleanName(name or "default")
+	if name == "" then name = "default" end
+	local data = {}
+	for flag, el in pairs(self.Elements) do
+		if el.Get then
+			local v = el:Get()
+			if el.Kind == "ColorPicker" and typeof(v) == "Color3" then
+				v = { math.floor(v.R * 255 + 0.5), math.floor(v.G * 255 + 0.5), math.floor(v.B * 255 + 0.5) }
+			elseif el.Kind == "Keybind" then
+				v = v and v.Name or ""
+			end
+			data[flag] = v
+		end
+	end
+	local ok, err = pcall(function()
+		writefile(self:_Dir() .. "/" .. name .. ".json", HttpService:JSONEncode(data))
+	end)
+	return ok, err
+end
+
+function Window:LoadConfig(name)
+	if not fsOk() then return false, "Dateisystem nicht verfügbar" end
+	name = cleanName(name or "default")
+	local path = self:_Dir() .. "/" .. name .. ".json"
+	if not isfile(path) then return false, "Konfiguration nicht gefunden: " .. name end
+	local ok, data = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+	if not ok or type(data) ~= "table" then return false, "Datei beschädigt" end
+	for flag, v in pairs(data) do
+		local el = self.Elements[flag]
+		if el and el.Set then
+			if el.Kind == "ColorPicker" and type(v) == "table" then
+				v = Color3.fromRGB(v[1] or 0, v[2] or 0, v[3] or 0)
+			elseif el.Kind == "Keybind" and v == "" then
+				v = nil
+			end
+			pcall(function() el:Set(v) end)
+		end
+	end
+	return true
+end
+
+function Window:DeleteConfig(name)
+	if not (fsOk() and delfile) then return false, "Dateisystem nicht verfügbar" end
+	local ok, err = pcall(function() delfile(self:_Dir() .. "/" .. cleanName(name) .. ".json") end)
+	return ok, err
+end
+
+function Window:SetAutoload(name)
+	if not fsOk() then return false, "Dateisystem nicht verfügbar" end
+	local ok, err = pcall(function() writefile(self:_Dir() .. "/_autoload.txt", cleanName(name or "default")) end)
+	return ok, err
+end
+
+function Window:_TryAutoload()
+	if not fsOk() then return end
+	pcall(function()
+		local f = self:_Dir() .. "/_autoload.txt"
+		if isfile(f) then
+			local n = trim(readfile(f))
+			if n ~= "" then self:LoadConfig(n) end
+		end
+	end)
+end
+
+--------------------------------------------------------------------
+-- Integriertes Settings-Panel
+--------------------------------------------------------------------
+function Window:_BuildSettings()
+	local win = self
+	local S = self.Settings
+
+	S:AddSection("Fenster")
+	self._themeDD = S:AddDropdown({
+		Name = "Theme", Description = "Farbschema der gesamten GUI", Options = CGui:GetThemeNames(),
+		Default = CGui.CurrentTheme or "Teal", Flag = "CGui.Theme",
+		Callback = function(n) if n and n ~= CGui.CurrentTheme then CGui:SetTheme(n) end end,
+	})
+	S:AddKeybind({
+		Name = "Fenster-Taste", Description = "Öffnet und schließt die GUI", Default = self.ToggleKey, Flag = "CGui.ToggleKey",
+		Callback = function(k) if k then win.ToggleKey = k end end,
+	})
+	S:AddSlider({
+		Name = "UI-Größe", Description = "Skaliert das ganze Fenster", Min = 70, Max = 140, Default = 100,
+		Increment = 5, Suffix = "%", Flag = "CGui.Scale", Callback = function(v) win:SetUIScale(v / 100) end,
+	})
+	S:AddSlider({
+		Name = "Hintergrund-Transparenz", Min = 0, Max = 50, Default = 0, Increment = 5, Suffix = "%",
+		Flag = "CGui.Transparency", Callback = function(v) win:SetBackgroundTransparency(v / 100) end,
+	})
+	S:AddToggle({
+		Name = "Effekte", Description = "Animierter Rahmen um das Fenster", Default = self.Effects,
+		Flag = "CGui.Effects", Callback = function(v) win.Effects = v end,
+	})
+	S:AddButton({ Name = "Position zurücksetzen", Description = "Zentriert das Fenster", Callback = function() win:CenterWindow() end })
+
+	S:AddSection("Benachrichtigungen")
+	S:AddDropdown({
+		Name = "Art", Description = "Wo Benachrichtigungen erscheinen", Options = { "CGui", "Roblox", "Window" },
+		Default = self.NotifyType, Mode = "Inline", Flag = "CGui.NotifyType", Callback = function(v) if v then win.NotifyType = v end end,
+	})
+	S:AddToggle({
+		Name = "Stapeln", Description = "Aus = neue Benachrichtigungen überdecken die alten", Default = self.NotifyStack,
+		Flag = "CGui.NotifyStack", Callback = function(v) win.NotifyStack = v end,
+	})
+	S:AddButton({
+		Name = "Test-Benachrichtigung",
+		Callback = function() win:Notify({ Title = "CGui", Content = "So sieht eine Benachrichtigung aus." }) end,
+	})
+
+	S:AddSection("Konfiguration")
+	if fsOk() then
+		local cfgName = "default"
+		local cfgDD
+		local function refresh() if cfgDD then cfgDD:Refresh(win:ListConfigs(), true) end end
+		local function report(ok, okText, err)
+			win:Notify({ Title = "Konfiguration", Content = ok and okText or tostring(err), Duration = 3 })
+		end
+		S:AddTextBox({
+			Name = "Name", Description = "Name der Konfiguration", Placeholder = "default", Default = "default",
+			Changed = function(t) cfgName = (t ~= "" and t) or "default" end,
+		})
+		cfgDD = S:AddDropdown({
+			Name = "Gespeichert", Description = "Vorhandene Konfigurationen", Options = win:ListConfigs(),
+			Callback = function(sel) if sel then cfgName = sel end end,
+		})
+		S:AddButton({ Name = "Speichern", Callback = function()
+			local ok, err = win:SaveConfig(cfgName)
+			report(ok, "Gespeichert: " .. cfgName, err)
+			refresh()
+		end })
+		S:AddButton({ Name = "Laden", Callback = function()
+			local ok, err = win:LoadConfig(cfgName)
+			report(ok, "Geladen: " .. cfgName, err)
+		end })
+		S:AddButton({ Name = "Löschen", Callback = function()
+			local ok, err = win:DeleteConfig(cfgName)
+			report(ok, "Gelöscht: " .. cfgName, err)
+			refresh()
+		end })
+		S:AddButton({ Name = "Als Autoload setzen", Description = "Wird beim Start automatisch geladen", Callback = function()
+			local ok, err = win:SetAutoload(cfgName)
+			report(ok, "Autoload: " .. cfgName, err)
+		end })
+	else
+		S:AddLabel({ Title = "Nicht verfügbar", Text = "Dein Executor unterstützt kein writefile/readfile.", Style = "Warning" })
+	end
+
+	S:AddSection("Info")
+	S:AddLabel({
+		Title = "CGui " .. CGui.Version,
+		Text = "Eigene Einstellungen kannst du mit Window.Settings:AddToggle(...) und den anderen Add-Funktionen hier ergänzen.",
+		Style = "Info",
+	})
+end
 
 function Window:SetToggleKey(key) self.ToggleKey = key end
 
@@ -707,6 +1251,13 @@ local function buildBase(container, opts, extraH, rightW)
 		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), Parent = header,
 	})
 
+	local rail = new("Frame", {
+		BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 0, 0, headH / 2), Size = UDim2.fromOffset(3, math.floor(headH * 0.4)), Parent = frame,
+	}, { corner(2) })
+	hit.MouseEnter:Connect(function() tween(rail, 0.2, { Size = UDim2.fromOffset(3, math.floor(headH * 0.72)) }) end)
+	hit.MouseLeave:Connect(function() tween(rail, 0.25, { Size = UDim2.fromOffset(3, math.floor(headH * 0.4)) }) end)
+
 	local left = 12
 	if opts.Icon then
 		local img = new("ImageLabel", {
@@ -814,8 +1365,18 @@ end
 function Container:AddButton(opts)
 	if type(opts) == "string" then opts = { Name = opts } end
 	opts = opts or {}
-	local b = buildBase(self, opts, 0, 30)
+	local b = buildBase(self, opts, 0, 48)
 	local el = { Kind = "Button" }
+
+	local chev, lines = drawChevron(b.Header, Theme.Accent)
+	b.Hit.MouseEnter:Connect(function()
+		tween(chev, 0.2, { Position = UDim2.new(1, -19, 0.5, 0) })
+		for _, l in ipairs(lines) do tween(l, 0.2, { BackgroundColor3 = Theme.AccentHover }) end
+	end)
+	b.Hit.MouseLeave:Connect(function()
+		tween(chev, 0.25, { Position = UDim2.new(1, -22, 0.5, 0) })
+		for _, l in ipairs(lines) do tween(l, 0.25, { BackgroundColor3 = Theme.Accent }) end
+	end)
 
 	function el:Fire() safe(opts.Callback) end
 	b.Hit.Activated:Connect(function()
@@ -836,22 +1397,25 @@ end
 --------------------------------------------------------------------
 function Container:AddToggle(opts)
 	opts = opts or {}
-	local b = buildBase(self, opts, 0, 64)
+	local b = buildBase(self, opts, 0, 76)
 	local el = { Kind = "Toggle" }
 	local state = opts.Default and true or false
 
-	local track = new("Frame", {
-		Size = UDim2.fromOffset(40, 20), Position = UDim2.new(1, -52, 0.5, -10),
-		BackgroundColor3 = state and Theme.Accent or Theme.Off, Parent = b.Header,
-	}, { corner(10) })
-	local knob = new("Frame", {
-		Size = UDim2.fromOffset(14, 14), Position = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3),
-		BackgroundColor3 = Theme.OnAccent, Parent = track,
+	local chip = new("TextLabel", {
+		Size = UDim2.fromOffset(52, 24), Position = UDim2.new(1, -64, 0.5, -12),
+		BackgroundColor3 = state and Theme.Accent or Theme.Off, Text = state and "ON" or "OFF",
+		Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = state and Theme.OnAccent or Theme.SubText, Parent = b.Header,
 	}, { corner(7) })
 
 	local function render()
-		tween(track, 0.2, { BackgroundColor3 = state and Theme.Accent or Theme.Off })
-		tween(knob, 0.25, { Position = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3) }, Enum.EasingStyle.Back)
+		chip.Text = state and "ON" or "OFF"
+		chip.Size = UDim2.fromOffset(60, 28)
+		chip.Position = UDim2.new(1, -68, 0.5, -14)
+		tween(chip, 0.3, { Size = UDim2.fromOffset(52, 24), Position = UDim2.new(1, -64, 0.5, -12) }, Enum.EasingStyle.Back)
+		tween(chip, 0.2, {
+			BackgroundColor3 = state and Theme.Accent or Theme.Off,
+			TextColor3 = state and Theme.OnAccent or Theme.SubText,
+		})
 	end
 
 	function el:Get() return state end
@@ -946,7 +1510,117 @@ end
 --------------------------------------------------------------------
 -- Dropdown
 --------------------------------------------------------------------
+-- Dropdown im Inline-Modus: alle Optionen sofort sichtbar, mehrere pro Reihe (Chips)
+local function addInlineDropdown(container, opts)
+	local win = container.Window
+	local multi = opts.Multi and true or false
+	local options = opts.Options or {}
+	local b = buildBase(container, opts, 0, 20)
+	local el = { Kind = "Dropdown" }
+	local selected = {}
+
+	local function setSel(def)
+		selected = {}
+		if type(def) == "table" then
+			if multi then
+				for _, v in ipairs(def) do selected[v] = true end
+			elseif def[1] ~= nil then
+				selected[def[1]] = true
+			end
+		elseif def ~= nil then
+			selected[def] = true
+		end
+	end
+	setSel(opts.Default)
+
+	local body = new("Frame", {
+		BackgroundTransparency = 1, Position = UDim2.new(0, 12, 0, b.HeadH), Size = UDim2.new(1, -24, 0, 0), Parent = b.Frame,
+	})
+	local layout = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Wraps = true, Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder, Parent = body,
+	})
+	autoHeight(b.Frame, layout, b.HeadH + 6, b.HeadH + 8, true)
+
+	local chips = {}
+	local function list()
+		local out = {}
+		for _, o in ipairs(options) do if selected[o] then table.insert(out, o) end end
+		return out
+	end
+	local function paint(instant)
+		for o, c in pairs(chips) do
+			local on = selected[o] and true or false
+			local goal = {
+				BackgroundColor3 = on and Theme.Accent or Theme.Off,
+				TextColor3 = on and Theme.OnAccent or Theme.Text,
+			}
+			if instant then
+				for k, v in pairs(goal) do c[k] = v end
+			else
+				tween(c, 0.2, goal)
+			end
+		end
+	end
+	local function fire()
+		if multi then safe(opts.Callback, list()) else safe(opts.Callback, list()[1]) end
+	end
+	local function build()
+		for _, c in pairs(chips) do c.Parent:Destroy() end
+		chips = {}
+		for i, o in ipairs(options) do
+			local w = TextService:GetTextSize(tostring(o), 13, Enum.Font.GothamMedium, Vector2.new(1000, 30)).X + 28
+			local holder = new("Frame", {
+				BackgroundTransparency = 1, Size = UDim2.fromOffset(math.floor(w), 34), LayoutOrder = i, Parent = body,
+			})
+			local c = new("TextButton", {
+				BackgroundColor3 = Theme.Off, AutoButtonColor = false, Text = tostring(o), Font = Enum.Font.GothamMedium,
+				TextSize = 13, TextColor3 = Theme.Text, TextTruncate = Enum.TextTruncate.AtEnd,
+				Size = UDim2.new(1, 0, 0, 28), Parent = holder,
+			}, { corner(8) })
+			c.Activated:Connect(function()
+				if el.Locked then return end
+				if multi then selected[o] = (not selected[o]) or nil else selected = { [o] = true } end
+				paint(false)
+				fire()
+			end)
+			selectFX(win, c,
+				function() tween(c, 0.15, { BackgroundTransparency = 0.25 }) end,
+				function() tween(c, 0.15, { BackgroundTransparency = 0 }) end)
+			chips[o] = c
+		end
+		paint(true)
+	end
+
+	function el:Get()
+		if multi then return list() end
+		return list()[1]
+	end
+	function el:Set(v, silent)
+		setSel(v)
+		paint(false)
+		if not silent then fire() end
+	end
+	function el:Refresh(newOptions, keep)
+		options = newOptions or {}
+		if keep then
+			local k = {}
+			for _, o in ipairs(options) do if selected[o] then k[o] = true end end
+			selected = k
+		else
+			selected = {}
+		end
+		build()
+	end
+	el._onLock = function(l) for _, c in pairs(chips) do c.Selectable = not l end end
+
+	build()
+	finalize(container, el, b, opts)
+	return el
+end
+
 function Container:AddDropdown(opts)
+	if opts and (opts.Mode == "Inline" or opts.Inline) then return addInlineDropdown(self, opts) end
 	opts = opts or {}
 	local multi = opts.Multi and true or false
 	local win = self.Window
@@ -1257,6 +1931,60 @@ end
 --------------------------------------------------------------------
 -- Section
 --------------------------------------------------------------------
+-- Reine Textanzeige: bewusst KEIN Button-Look (keine Karte, kein Hover, kein Klick)
+function Container:AddLabel(opts)
+	if type(opts) == "string" then opts = { Text = opts } end
+	opts = opts or {}
+	local style = opts.Style or "Plain"
+	local function barColor(st)
+		if st == "Info" then return Theme.Accent end
+		if st == "Success" then return Theme.Success end
+		if st == "Warning" then return Theme.Warning end
+		if st == "Error" then return Theme.Error end
+		return Theme.SubText
+	end
+
+	local frame = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -6, 0, 28), Parent = self.Page })
+	local bar = new("Frame", {
+		BackgroundColor3 = barColor(style), BorderSizePixel = 0, Position = UDim2.fromOffset(0, 2),
+		Size = UDim2.new(0, 3, 1, -4), Parent = frame,
+	}, { corner(2) })
+	local content = new("Frame", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 4), Size = UDim2.new(1, -18, 0, 0), Parent = frame,
+	})
+	local layout = new("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = content })
+
+	local title, body
+	local function mk(order, text, size, font, color)
+		return new("TextLabel", {
+			LayoutOrder = order, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y, Text = text, Font = font, TextSize = size, TextColor3 = color,
+			TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+			RichText = opts.RichText == true, Parent = content,
+		})
+	end
+	if opts.Title and opts.Title ~= "" then title = mk(1, opts.Title, 14, Enum.Font.GothamBold, Theme.Text) end
+	body = mk(2, tostring(opts.Text or ""), 13, Enum.Font.Gotham, title and Theme.SubText or Theme.Text)
+	autoHeight(frame, layout, 8, 26, false)
+
+	local el = { Kind = "Label", Frame = frame }
+	function el:Get() return body.Text end
+	function el:SetText(t) body.Text = tostring(t) end
+	function el:SetTitle(t)
+		if title then
+			title.Text = tostring(t)
+		else
+			title = mk(1, tostring(t), 14, Enum.Font.GothamBold, Theme.Text)
+			body.TextColor3 = Theme.SubText
+		end
+	end
+	function el:SetStyle(st) tween(bar, 0.2, { BackgroundColor3 = barColor(st) }) end
+	function el:SetVisible(v) frame.Visible = v and true or false end
+	function el:Destroy() frame:Destroy() end
+	return el
+end
+Container.AddParagraph = Container.AddLabel
+
 function Container:AddTextBox(opts)
 	opts = opts or {}
 	local win = self.Window
@@ -1408,55 +2136,93 @@ end
 function Window:_SelectTab(tab)
 	if self.CurrentTab == tab or tab.Locked then return end
 	local old = self.CurrentTab
+	local dir = 1
 	if old then
+		dir = (tab.Index > old.Index) and 1 or -1
 		old.Page.Visible = false
-		tween(old.Button, 0.25, { BackgroundTransparency = 1 })
-		tween(old.Bar, 0.25, { Size = UDim2.fromOffset(3, 0) })
 		tween(old.Label, 0.25, { TextColor3 = Theme.SubText })
+		tween(old.IconObj, 0.25, { [old.IconProp] = Theme.SubText })
 	end
 	self.CurrentTab = tab
 	tab.Page.Visible = true
-	tab.Page.Position = UDim2.fromOffset(0, 16)
+	tab.Page.Position = UDim2.fromOffset(28 * dir, 0)
 	tween(tab.Page, 0.4, { Position = UDim2.fromOffset(0, 0) })
-	tween(tab.Button, 0.25, { BackgroundTransparency = 0.75 })
-	tween(tab.Bar, 0.3, { Size = UDim2.fromOffset(3, 18) })
 	tween(tab.Label, 0.25, { TextColor3 = Theme.Text })
+	tween(tab.IconObj, 0.25, { [tab.IconProp] = Theme.Accent })
+	self:_MoveIndicator(true)
 	self:_CloseSub()
+end
+
+function Window:_LayoutDock()
+	local x = 6
+	for _, t in ipairs(self.Tabs) do
+		if t.Button.Visible then
+			t.X = x
+			t.Button.Position = UDim2.fromOffset(x, 5)
+			x = x + t.W + 4
+		end
+	end
+	local total = x + 2
+	self.DockScroll.CanvasSize = UDim2.fromOffset(total, 0)
+	local maxW = math.max(120, self.Main.Size.X.Offset - 48)
+	local w = math.min(total, maxW)
+	w = w - w % 2
+	self.Dock.Size = UDim2.fromOffset(w, 50)
+	self:_MoveIndicator(false)
+end
+
+function Window:_MoveIndicator(animate)
+	local t = self.CurrentTab
+	local ind = self.Indicator
+	if not t or not t.X then ind.Visible = false; return end
+	local pos, size = UDim2.fromOffset(t.X, 5), UDim2.fromOffset(t.W, 40)
+	if animate and ind.Visible then
+		tween(ind, 0.4, { Position = pos, Size = size })
+	else
+		ind.Position, ind.Size = pos, size
+	end
+	ind.Visible = true
+	local sc = self.DockScroll
+	local viewW = self.Dock.Size.X.Offset
+	local canvasW = sc.CanvasSize.X.Offset
+	if canvasW > viewW then
+		local target = math.clamp(t.X + t.W / 2 - viewW / 2, 0, canvasW - viewW)
+		tween(sc, 0.35, { CanvasPosition = Vector2.new(math.floor(target), 0) })
+	end
 end
 
 function Window:AddTab(opts)
 	if type(opts) == "string" then opts = { Name = opts } end
 	opts = opts or {}
-	local tab = setmetatable({ Window = self, Name = opts.Name or "Tab", Locked = false }, Tab)
+	local tab = setmetatable({ Window = self, Name = opts.Name or "Tab", Locked = false, Index = #self.Tabs + 1 }, Tab)
+	local textW = TextService:GetTextSize(tab.Name, 13, Enum.Font.GothamMedium, Vector2.new(400, 20)).X
+	tab.W = math.floor(textW) + 60
 
 	local btn = new("TextButton", {
-		BackgroundColor3 = Theme.Accent, BackgroundTransparency = 1, AutoButtonColor = false, Text = "",
-		Size = UDim2.new(1, 0, 0, 38), Parent = self.TabList,
-	}, { corner(8) })
-	tab.Bar = new("Frame", {
-		BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.fromOffset(3, 0), Parent = btn,
-	}, { corner(2) })
-
+		BackgroundTransparency = 1, AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(tab.W, 40),
+		Position = UDim2.fromOffset(6, 5), Parent = self.DockScroll,
+	})
 	local slot = new("Frame", {
-		BackgroundTransparency = 1, Size = UDim2.fromOffset(24, 24), Position = UDim2.new(0, 10, 0.5, -12), Parent = btn,
+		BackgroundTransparency = 1, Size = UDim2.fromOffset(24, 24), Position = UDim2.fromOffset(12, 8), Parent = btn,
 	})
 	local img = new("ImageLabel", {
 		BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(20, 20), ImageColor3 = Theme.Accent, Parent = slot,
+		Size = UDim2.fromOffset(20, 20), ImageColor3 = Theme.SubText, Parent = slot,
 	})
-	if not (opts.Icon and applyIcon(img, opts.Icon)) then
+	if opts.Icon and applyIcon(img, opts.Icon) then
+		tab.IconObj, tab.IconProp = img, "ImageColor3"
+	else
 		img:Destroy()
-		new("TextLabel", {   -- ohne Icon: die ersten 2 Buchstaben
+		tab.IconObj = new("TextLabel", {   -- ohne Icon: die ersten 2 Buchstaben
 			BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = string.sub(tab.Name, 1, 2),
-			Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.Accent, Parent = slot,
+			Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.SubText, Parent = slot,
 		})
+		tab.IconProp = "TextColor3"
 	end
-
 	tab.Label = new("TextLabel", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(42, 0), Size = UDim2.new(1, -46, 1, 0), Text = tab.Name,
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(44, 0), Size = UDim2.new(1, -50, 1, 0), Text = tab.Name,
 		Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd, TextTransparency = self.TabsExpanded and 0 or 1, Parent = btn,
+		TextTruncate = Enum.TextTruncate.AtEnd, Parent = btn,
 	})
 	tab.Button = btn
 
@@ -1464,31 +2230,32 @@ function Window:AddTab(opts)
 		BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), CanvasSize = UDim2.new(),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Accent,
 		ScrollingDirection = Enum.ScrollingDirection.Y, Visible = false, Parent = self.Content,
-	}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 6) })
+	}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 8) })
 
-	btn.MouseEnter:Connect(function()
-		if opts.Description and opts.Description ~= "" then self:_ShowTip(opts.Description) end
-		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 0.88 }) end
-	end)
-	btn.MouseLeave:Connect(function()
-		self:_HideTip()
-		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 1 }) end
-	end)
-	selectFX(self, btn, function()
+	local function hoverIn()
 		if opts.Description and opts.Description ~= "" then self:_ShowTip(opts.Description, btn) end
-		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 0.88 }) end
-	end, function()
+		if self.CurrentTab ~= tab and not tab.Locked then tween(tab.Label, 0.15, { TextColor3 = Theme.Text }) end
+	end
+	local function hoverOut()
 		self:_HideTip()
-		if self.CurrentTab ~= tab then tween(btn, 0.15, { BackgroundTransparency = 1 }) end
-	end)
+		if self.CurrentTab ~= tab and not tab.Locked then tween(tab.Label, 0.15, { TextColor3 = Theme.SubText }) end
+	end
+	btn.MouseEnter:Connect(hoverIn)
+	btn.MouseLeave:Connect(hoverOut)
+	selectFX(self, btn, hoverIn, hoverOut)
 	btn.Activated:Connect(function() self:_SelectTab(tab) end)
 
 	function tab:SetLock(state, mode)
 		mode = mode or "Gray"
-		btn.Selectable = not state
 		self.Locked = state and true or false
+		btn.Selectable = not self.Locked
 		if self.Locked then
-			if mode == "Hide" then btn.Visible = false else btn.Visible = true; btn.BackgroundTransparency = 1; tween(self.Label, 0.2, { TextColor3 = Theme.Off }) end
+			if mode == "Hide" then
+				btn.Visible = false
+			else
+				btn.Visible = true
+				tween(self.Label, 0.2, { TextColor3 = Theme.Off })
+			end
 			if self.Window.CurrentTab == self then
 				for _, t in ipairs(self.Window.Tabs) do
 					if not t.Locked then self.Window.CurrentTab = nil; self.Window:_SelectTab(t); break end
@@ -1498,27 +2265,20 @@ function Window:AddTab(opts)
 			btn.Visible = true
 			tween(self.Label, 0.2, { TextColor3 = (self.Window.CurrentTab == self) and Theme.Text or Theme.SubText })
 		end
+		self.Window:_LayoutDock()
 	end
 	function tab:Lock(mode) self:SetLock(true, mode) end
 	function tab:Unlock() self:SetLock(false) end
 	function tab:Select() self.Window:_SelectTab(self) end
 
 	table.insert(self.Tabs, tab)
+	self:_LayoutDock()
 	if not self.CurrentTab then self:_SelectTab(tab) end
 	if opts.Locked then tab:SetLock(true, opts.LockMode) end
 	return tab
 end
 
-function Window:SetTabsExpanded(v)
-	self.TabsExpanded = v and true or false
-	local w = self.TabsExpanded and 160 or 52
-	tween(self.Sidebar, 0.35, { Size = UDim2.new(0, w, 1, -16) })
-	tween(self.Content, 0.35, { Position = UDim2.new(0, w + 16, 0, 8), Size = UDim2.new(1, -(w + 24), 1, -16) })
-	for _, t in ipairs(self.Tabs) do
-		tween(t.Label, 0.25, { TextTransparency = self.TabsExpanded and 0 or 1 })
-	end
-	self.Arrow.Text = self.TabsExpanded and "«" or "»"
-end
+function Window:SetTabsExpanded() end   -- veraltet (Tabs sind jetzt unten im Dock)
 
 --------------------------------------------------------------------
 -- Ladescreen
@@ -1645,104 +2405,239 @@ end
 
 function Window:_RunKeySystem(ks)
 	local gui = self.Gui
+	local maxTries = ks.MaxAttempts or 5
+	local lockSecs = ks.LockSeconds or 15
+	local remember = (ks.Remember ~= false) and fsOk()
+	local keyFile = "CGui/" .. cleanName(self.Name) .. "_key.txt"
+
+	local function check(input)
+		local keys, fetched = collectKeys(ks)
+		input = trim(input)
+		for _, k in ipairs(keys) do
+			if input ~= "" and k == input then return true, true end
+		end
+		return false, fetched
+	end
+
+	-- gespeicherter Key: Key-System ueberspringen
+	if remember then
+		local ok, saved = pcall(function()
+			if isfile(keyFile) then return readfile(keyFile) end
+		end)
+		if ok and saved and trim(saved) ~= "" and (check(saved)) then
+			safe(ks.OnSuccess, trim(saved))
+			return
+		end
+	end
+
+	local links = {}
+	if ks.GetKeyLink then table.insert(links, { Text = ks.GetKeyText or "Key holen", Url = ks.GetKeyLink }) end
+	if type(ks.Links) == "table" then
+		for _, l in ipairs(ks.Links) do
+			if #links < 3 and type(l) == "table" and l.Url then table.insert(links, { Text = l.Text or "Link", Url = l.Url }) end
+		end
+	end
+
+	local W = 400
+	local submitY = remember and 218 or 182
+	local H = submitY + 44 + 24 + (#links > 0 and 46 or 0)
+	H = H - H % 2
+
 	local backdrop = new("Frame", {
 		BackgroundColor3 = Theme.LoadBg, BackgroundTransparency = 1, BorderSizePixel = 0,
-		Size = UDim2.fromScale(1, 1), ZIndex = 89, Parent = gui,
+		Size = UDim2.fromScale(1, 1), Active = true, ZIndex = 89, Parent = gui,
 	})
-	local panel = new("Frame", {
-		BackgroundColor3 = Theme.Main, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(360, ks.GetKeyLink and 250 or 212), ZIndex = 90, Parent = gui,
-	}, { corner(12), stroke(Theme.Accent, 1, 0.45) })
-	local scale = new("UIScale", { Scale = 0.9, Parent = panel })
+	local card = new("Frame", {
+		BackgroundColor3 = Theme.Main, BorderSizePixel = 0, Size = UDim2.fromOffset(W, H), ZIndex = 90, Parent = gui,
+	}, { corner(16) })
+	local border = spinBorder(card, 1.5)
+	local vp = gui.AbsoluteSize
+	local cx, cy = math.floor((vp.X - W) / 2), math.floor((vp.Y - H) / 2)
+	card.Position = UDim2.fromOffset(cx, cy + 20)
 
-	new("TextLabel", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(20, 16), Size = UDim2.new(1, -40, 0, 26),
-		Text = ks.Title or "Key System", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = Theme.Accent,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = panel,
-	})
-	new("TextLabel", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(20, 44), Size = UDim2.new(1, -40, 0, 18),
-		Text = ks.Subtitle or "Bitte gib deinen Key ein, um fortzufahren.", Font = Enum.Font.Gotham, TextSize = 12,
-		TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left, Parent = panel,
-	})
+	local function label(y, h, text, size, font, color, align)
+		return new("TextLabel", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(24, y), Size = UDim2.new(1, -48, 0, h), Text = text,
+			Font = font, TextSize = size, TextColor3 = color, TextXAlignment = align or Enum.TextXAlignment.Left, Parent = card,
+		})
+	end
+	label(22, 14, string.upper(tostring(self.Name)), 11, Enum.Font.GothamBold, Theme.Accent)
+	label(38, 30, ks.Title or "Key System", 24, Enum.Font.GothamBold, Theme.Text)
+	label(72, 18, ks.Subtitle or "Gib deinen Key ein, um fortzufahren.", 13, Enum.Font.Gotham, Theme.SubText)
+
+	local holder = new("Frame", {
+		BackgroundColor3 = Theme.Element, Position = UDim2.fromOffset(24, 104), Size = UDim2.new(1, -48, 0, 44), Parent = card,
+	}, { corner(10), stroke(Theme.Stroke, 1, 0) })
+	local inStroke = holder:FindFirstChildOfClass("UIStroke")
+	local hasPaste = getclipboard ~= nil
 	local box = new("TextBox", {
-		BackgroundColor3 = Theme.Element, Position = UDim2.fromOffset(20, 76), Size = UDim2.new(1, -40, 0, 36),
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -(hasPaste and 92 or 28), 1, 0),
 		Text = "", PlaceholderText = "Key eingeben...", PlaceholderColor3 = Theme.SubText, ClearTextOnFocus = false,
-		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Theme.Text, Parent = panel,
-	}, { corner(8), stroke(), padding(10, 0, 10, 0) })
-	local status = new("TextLabel", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(20, 118), Size = UDim2.new(1, -40, 0, 18), Text = "",
-		Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left, Parent = panel,
+		Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left,
+		ClipsDescendants = true, Parent = holder,
 	})
+	box.Focused:Connect(function() tween(inStroke, 0.15, { Color = Theme.Accent }) end)
+	box.FocusLost:Connect(function() tween(inStroke, 0.15, { Color = Theme.Stroke }) end)
+	if hasPaste then
+		local paste = new("TextButton", {
+			BackgroundColor3 = Theme.Off, AutoButtonColor = false, Text = "Einfügen", Font = Enum.Font.GothamMedium,
+			TextSize = 12, TextColor3 = Theme.Text, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
+			Size = UDim2.fromOffset(70, 28), Parent = holder,
+		}, { corner(8) })
+		paste.Activated:Connect(function() pcall(function() box.Text = trim(getclipboard()) end) end)
+	end
+
+	local status = label(156, 18, "", 12, Enum.Font.Gotham, Theme.SubText)
+	status.Size = UDim2.fromOffset(230, 18)
+	local attemptsLbl = label(156, 18, "Versuche: 0/" .. maxTries, 12, Enum.Font.Gotham, Theme.SubText, Enum.TextXAlignment.Right)
+	local function setStatus(text, color)
+		status.Text = text
+		status.TextColor3 = color or Theme.SubText
+	end
+
+	local rememberOn = ks.RememberDefault ~= false
+	if remember then
+		label(184, 24, "Key merken", 13, Enum.Font.Gotham, Theme.SubText)
+		local chip = new("TextButton", {
+			BackgroundColor3 = rememberOn and Theme.Accent or Theme.Off, AutoButtonColor = false,
+			Text = rememberOn and "ON" or "OFF", Font = Enum.Font.GothamBold, TextSize = 11,
+			TextColor3 = rememberOn and Theme.OnAccent or Theme.SubText,
+			Position = UDim2.fromOffset(W - 24 - 52, 184), Size = UDim2.fromOffset(52, 24), Parent = card,
+		}, { corner(7) })
+		chip.Activated:Connect(function()
+			rememberOn = not rememberOn
+			chip.Text = rememberOn and "ON" or "OFF"
+			tween(chip, 0.2, {
+				BackgroundColor3 = rememberOn and Theme.Accent or Theme.Off,
+				TextColor3 = rememberOn and Theme.OnAccent or Theme.SubText,
+			})
+		end)
+	end
+
 	local submit = new("TextButton", {
 		BackgroundColor3 = Theme.Accent, AutoButtonColor = false, Text = "Bestätigen", Font = Enum.Font.GothamBold,
-		TextSize = 14, TextColor3 = Theme.OnAccent, Position = UDim2.fromOffset(20, 148), Size = UDim2.new(1, -40, 0, 38), Parent = panel,
-	}, { corner(8) })
-	submit.MouseEnter:Connect(function() tween(submit, 0.15, { BackgroundColor3 = Theme.AccentHover }) end)
-	submit.MouseLeave:Connect(function() tween(submit, 0.15, { BackgroundColor3 = Theme.Accent }) end)
+		TextSize = 14, TextColor3 = Theme.OnAccent, Position = UDim2.fromOffset(24, submitY),
+		Size = UDim2.new(1, -48, 0, 44), Parent = card,
+	}, { corner(10) })
+	local passed, busy, tries, lockedUntil = false, false, 0, 0
+	submit.MouseEnter:Connect(function() if not passed then tween(submit, 0.15, { BackgroundColor3 = Theme.AccentHover }) end end)
+	submit.MouseLeave:Connect(function() if not passed then tween(submit, 0.15, { BackgroundColor3 = Theme.Accent }) end end)
 
-	if ks.GetKeyLink then
-		local get = new("TextButton", {
-			BackgroundColor3 = Theme.Off, AutoButtonColor = false, Text = "Key holen (Link kopieren)", Font = Enum.Font.GothamMedium,
-			TextSize = 13, TextColor3 = Theme.Text, Position = UDim2.fromOffset(20, 194), Size = UDim2.new(1, -40, 0, 34), Parent = panel,
-		}, { corner(8) })
-		get.Activated:Connect(function()
-			if setclipboard then
-				pcall(setclipboard, ks.GetKeyLink)
-				status.TextColor3 = Theme.Accent
-				status.Text = "Link in die Zwischenablage kopiert."
-			else
-				status.TextColor3 = Theme.SubText
-				status.Text = ks.GetKeyLink
+	if #links > 0 then
+		local gap = 8
+		local bw = math.floor((W - 48 - gap * (#links - 1)) / #links)
+		for i, l in ipairs(links) do
+			local lb = new("TextButton", {
+				BackgroundColor3 = Theme.Off, AutoButtonColor = false, Text = l.Text, Font = Enum.Font.GothamMedium,
+				TextSize = 13, TextColor3 = Theme.Text, TextTruncate = Enum.TextTruncate.AtEnd,
+				Position = UDim2.fromOffset(24 + (i - 1) * (bw + gap), submitY + 56), Size = UDim2.fromOffset(bw, 34), Parent = card,
+			}, { corner(9), padding(6, 0, 6, 0) })
+			lb.MouseEnter:Connect(function() tween(lb, 0.15, { BackgroundTransparency = 0.2 }) end)
+			lb.MouseLeave:Connect(function() tween(lb, 0.15, { BackgroundTransparency = 0 }) end)
+			lb.Activated:Connect(function()
+				if setclipboard then
+					pcall(setclipboard, l.Url)
+					setStatus("Link kopiert: " .. l.Text, Theme.Success)
+				else
+					setStatus(l.Url, Theme.SubText)
+				end
+			end)
+		end
+	end
+
+	-- Einblenden
+	local rot = 0
+	local rc = RunService.RenderStepped:Connect(function(dt)
+		rot = (rot + dt * 60) % 360
+		border.Rotation = rot
+	end)
+	table.insert(self._conns, rc)
+	local snap = fadeCapture(card)
+	fadeSet(snap, 1)
+	fadeTween(snap, 0.35, 0)
+	tween(card, 0.45, { Position = UDim2.fromOffset(cx, cy) })
+	tween(backdrop, 0.4, { BackgroundTransparency = 0.25 })
+
+	local function shake()
+		for _, dx in ipairs({ 10, -10, 6, -6, 0 }) do
+			tween(card, 0.05, { Position = UDim2.fromOffset(cx + dx, cy) })
+			task.wait(0.05)
+		end
+	end
+	local function startLock()
+		lockedUntil = os.clock() + lockSecs
+		task.spawn(function()
+			while os.clock() < lockedUntil and not passed and not self.Destroyed do
+				submit.Text = "Gesperrt (" .. math.ceil(lockedUntil - os.clock()) .. "s)"
+				setStatus("Zu viele Versuche - bitte warten.", Theme.Warning)
+				task.wait(0.25)
+			end
+			if not passed then
+				submit.Text = "Bestätigen"
+				setStatus("", Theme.SubText)
+				tries = 0
+				attemptsLbl.Text = "Versuche: 0/" .. maxTries
 			end
 		end)
 	end
 
-	tween(backdrop, 0.4, { BackgroundTransparency = 0.25 })
-	local inSnap = fadeCapture(panel)
-	fadeSet(inSnap, 1)
-	fadeTween(inSnap, 0.4, 0)
-	tween(scale, 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
-
-	local passed, busy = false, false
-	local function shake()
-		local base = panel.Position
-		for _, dx in ipairs({ 10, -10, 6, -6, 0 }) do
-			tween(panel, 0.05, { Position = UDim2.new(base.X.Scale, base.X.Offset + dx, base.Y.Scale, base.Y.Offset) })
-			task.wait(0.05)
-		end
-	end
-	local function check()
-		if busy then return end
-		busy = true
-		status.TextColor3 = Theme.SubText
-		status.Text = "Key wird überprüft..."
-		local keys, ok = collectKeys(ks)
-		local input = trim(box.Text)
-		local valid = false
-		for _, k in ipairs(keys) do if k == input and input ~= "" then valid = true end end
-		if valid then
-			status.TextColor3 = Theme.Accent
-			status.Text = "Key akzeptiert!"
-			passed = true
-			safe(ks.OnSuccess, input)
-		else
-			status.TextColor3 = Theme.Error
-			status.Text = (ok == false) and "Key konnte nicht geladen werden." or "Ungültiger Key."
+	local function doSubmit()
+		if busy or passed or os.clock() < lockedUntil then return end
+		local text = trim(box.Text)
+		if text == "" then
+			setStatus("Bitte gib einen Key ein.", Theme.Warning)
 			shake()
-			busy = false
+			return
+		end
+		busy = true
+		local dots = true
+		task.spawn(function()
+			local i = 0
+			while busy and dots do
+				i = i % 3 + 1
+				submit.Text = "Prüfe" .. string.rep(".", i)
+				task.wait(0.25)
+			end
+		end)
+		setStatus("Key wird überprüft...", Theme.SubText)
+		local ok, fetched = check(text)
+		dots = false
+		busy = false
+		if ok then
+			passed = true
+			submit.Text = "Akzeptiert!"
+			tween(submit, 0.2, { BackgroundColor3 = Theme.Success })
+			tween(inStroke, 0.2, { Color = Theme.Success })
+			setStatus("Key akzeptiert - willkommen!", Theme.Success)
+			if remember and rememberOn then
+				pcall(function()
+					if not isfolder("CGui") then makefolder("CGui") end
+					writefile(keyFile, text)
+				end)
+			end
+			safe(ks.OnSuccess, text)
+		else
+			tries = tries + 1
+			attemptsLbl.Text = "Versuche: " .. tries .. "/" .. maxTries
+			setStatus(fetched == false and "Key konnte nicht geladen werden." or "Ungültiger Key.", Theme.Error)
+			submit.Text = "Bestätigen"
+			tween(inStroke, 0.15, { Color = Theme.Error })
+			task.delay(0.8, function() if not passed then tween(inStroke, 0.3, { Color = Theme.Stroke }) end end)
+			shake()
+			if tries >= maxTries then startLock() end
 		end
 	end
-	submit.Activated:Connect(check)
-	box.FocusLost:Connect(function(enter) if enter then check() end end)
+	submit.Activated:Connect(doSubmit)
+	box.FocusLost:Connect(function(enter) if enter then doSubmit() end end)
 
 	repeat task.wait(0.1) until passed or self.Destroyed
-	task.wait(0.4)
-	tween(scale, 0.4, { Scale = 1.06 })
-	fadeTween(fadeCapture(panel), 0.4, 1)
+	task.wait(0.6)
+	fadeTween(fadeCapture(card), 0.4, 1)
+	tween(card, 0.4, { Position = UDim2.fromOffset(cx, cy - 16) })
 	tween(backdrop, 0.4, { BackgroundTransparency = 1 })
 	task.wait(0.45)
-	panel:Destroy()
+	rc:Disconnect()
+	card:Destroy()
 	backdrop:Destroy()
 end
 
@@ -1755,12 +2650,16 @@ function CGui:CreateWindow(opts)
 	local win = setmetatable({
 		Name = opts.Name or "Settings",
 		Version = opts.Version or "",
-		Tabs = {}, Elements = {}, _conns = {},
+		Tabs = {}, Elements = {}, _conns = {}, _themeHooks = {}, _borders = {}, _promptQueue = {},
 		Ready = false, Visible = false,
 		ToggleKey = opts.ToggleKey or Enum.KeyCode.RightShift,
 		NotifyType = opts.NotifyType or "CGui",            -- "CGui" | "Roblox" | "Window"
-		NotifyStack = opts.NotifyStack ~= false,           -- true = stapeln, false = überdecken
-		TabsExpanded = true,
+		NotifyStack = opts.NotifyStack ~= false,           -- true = stapeln, false = ueberdecken
+		CloseAction = opts.CloseAction or "Ask",           -- "Ask" | "Hide" | "Destroy"
+		PromptScope = opts.PromptScope or "Window",        -- "Window" | "Screen"
+		Effects = opts.Effects ~= false,
+		UserScale = 1,
+		_sCur = 0, _sTarget = 0, _settingsOpen = false,
 	}, Window)
 
 	-- ScreenGui in CoreGui (Fallback: gethui / PlayerGui)
@@ -1783,69 +2682,136 @@ function CGui:CreateWindow(opts)
 	win.NoSel = new("Frame", { Name = "NoSel", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
 
 	-- Hauptfenster
-	local size = opts.Size or Vector2.new(640, 420)
+	local size = opts.Size or Vector2.new(680, 460)
 	size = Vector2.new(size.X - size.X % 2, size.Y - size.Y % 2)   -- gerade Pixel = scharfer Text
+	local minSize = Vector2.new(520, 340)
 	local cam = workspace.CurrentCamera
 	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
-	local minSize = Vector2.new(480, 300)
 	local main = new("Frame", {
 		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromOffset(math.floor(vp.X / 2), math.floor(vp.Y / 2)),
 		Size = UDim2.fromOffset(size.X, size.Y), BackgroundColor3 = Theme.Main, BorderSizePixel = 0,
-		Visible = false, Parent = gui,
-	}, { corner(12), stroke(Theme.Stroke, 1, 0) })
+		Visible = false, ZIndex = 2, Parent = gui,
+	}, { corner(14) })
 	win.Main = main
 	win.Scale = new("UIScale", { Scale = 0.9, Parent = main })
+	local borderGrad, paintBorder = spinBorder(main, 1.5)
+	table.insert(win._borders, borderGrad)
+	table.insert(win._themeHooks, paintBorder)
 
-	-- Topbar: Name (+ Version)
-	local top = new("Frame", { BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 46), Parent = main }, { corner(12) })
-	new("Frame", { BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Position = UDim2.new(0, 0, 1, -12), Size = UDim2.new(1, 0, 0, 12), Parent = top })
+	-- Topbar: Titel (+Version), Settings, X
+	local top = new("Frame", {
+		BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 48), Parent = main,
+	}, { corner(14) })
+	new("Frame", {
+		BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Position = UDim2.new(0, 0, 1, -14),
+		Size = UDim2.new(1, 0, 0, 14), Parent = top,
+	})
+	win.Topbar = top
 	local hasVersion = win.Version ~= ""
 	new("TextLabel", {
-		BackgroundTransparency = 1, Position = hasVersion and UDim2.fromOffset(16, 6) or UDim2.new(0, 16, 0, 0),
-		Size = hasVersion and UDim2.new(1, -32, 0, 20) or UDim2.new(1, -32, 1, 0), Text = win.Name,
+		BackgroundTransparency = 1, Position = hasVersion and UDim2.fromOffset(18, 7) or UDim2.fromOffset(18, 0),
+		Size = hasVersion and UDim2.new(1, -208, 0, 20) or UDim2.new(1, -208, 1, 0), Text = win.Name,
 		Font = Enum.Font.GothamBold, TextSize = hasVersion and 15 or 18, TextColor3 = Theme.Text,
 		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = top,
 	})
 	if hasVersion then
 		new("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(16, 26), Size = UDim2.new(1, -32, 0, 14),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 27), Size = UDim2.new(1, -208, 0, 14),
 			Text = win.Version, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.Text,
 			TextTransparency = 0.55, TextXAlignment = Enum.TextXAlignment.Left, Parent = top,
 		})
 	end
 
-	-- Body
+	local sBtn = new("TextButton", {
+		BackgroundColor3 = Theme.Element, AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(104, 30),
+		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -54, 0.5, 0), Parent = top,
+	}, { corner(15), stroke(Theme.Stroke, 1, 0) })
+	local sIcon = new("ImageLabel", {
+		BackgroundTransparency = 1, Size = UDim2.fromOffset(16, 16), Position = UDim2.fromOffset(12, 7),
+		ImageColor3 = Theme.Text, Parent = sBtn,
+	})
+	local hasIcon = applyIcon(sIcon, "settings")
+	if not hasIcon then sIcon:Destroy() end
+	win.SettingsBtn = sBtn
+	win.SettingsBtnLabel = new("TextLabel", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(hasIcon and 32 or 0, 0),
+		Size = UDim2.new(1, hasIcon and -36 or 0, 1, 0), Text = "Settings", Font = Enum.Font.GothamMedium,
+		TextSize = 13, TextColor3 = Theme.Text, Parent = sBtn,
+	})
+	local function sIn() if not win._settingsOpen then tween(sBtn, 0.15, { BackgroundColor3 = Theme.ElementHover }) end end
+	local function sOut() if not win._settingsOpen then tween(sBtn, 0.15, { BackgroundColor3 = Theme.Element }) end end
+	sBtn.MouseEnter:Connect(sIn)
+	sBtn.MouseLeave:Connect(sOut)
+	selectFX(win, sBtn, sIn, sOut)
+	sBtn.Activated:Connect(function() win:ToggleSettings() end)
+	if opts.Settings == false then sBtn.Visible = false end
+
+	local xBtn = new("TextButton", {
+		BackgroundColor3 = Theme.Element, AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(30, 30),
+		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Parent = top,
+	}, { corner(15), stroke(Theme.Stroke, 1, 0) })
+	local _, xLines = drawX(xBtn, 10, Theme.SubText, 2)
+	local function xIn()
+		tween(xBtn, 0.15, { BackgroundColor3 = Theme.Error })
+		for _, l in ipairs(xLines) do tween(l, 0.15, { BackgroundColor3 = Theme.OnAccent }) end
+	end
+	local function xOut()
+		tween(xBtn, 0.15, { BackgroundColor3 = Theme.Element })
+		for _, l in ipairs(xLines) do tween(l, 0.15, { BackgroundColor3 = Theme.SubText }) end
+	end
+	xBtn.MouseEnter:Connect(xIn)
+	xBtn.MouseLeave:Connect(xOut)
+	selectFX(win, xBtn, xIn, xOut)
+	xBtn.Activated:Connect(function() win:RequestClose() end)
+
+	-- Body: Inhalt oben, Dock (Tabs) unten
 	local body = new("Frame", {
-		BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 46),
-		Size = UDim2.new(1, 0, 1, -46), Parent = main,
+		BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 48),
+		Size = UDim2.new(1, 0, 1, -48), Parent = main,
 	})
 	win.Body = body
-
-	-- Sidebar (Tabs)
-	local sidebar = new("Frame", {
-		BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Position = UDim2.fromOffset(8, 8),
-		Size = UDim2.new(0, 160, 1, -16), ClipsDescendants = true, Parent = body,
-	}, { corner(10) })
-	win.Sidebar = sidebar
-	win.Arrow = new("TextButton", {
-		BackgroundTransparency = 1, Text = "«", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = Theme.Accent,
-		Size = UDim2.new(1, 0, 0, 30), Parent = sidebar,
-	})
-	win.Arrow.MouseEnter:Connect(function() tween(win.Arrow, 0.15, { TextColor3 = Theme.Text }) end)
-	win.Arrow.MouseLeave:Connect(function() tween(win.Arrow, 0.15, { TextColor3 = Theme.Accent }) end)
-	win.Arrow.Activated:Connect(function() win:SetTabsExpanded(not win.TabsExpanded) end)
-	selectFX(win, win.Arrow, function() win.Arrow.TextColor3 = Theme.Text end, function() win.Arrow.TextColor3 = Theme.Accent end)
-
-	win.TabList = new("ScrollingFrame", {
-		BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(0, 32), Size = UDim2.new(1, 0, 1, -34),
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 2,
-		ScrollBarImageColor3 = Theme.Accent, ScrollingDirection = Enum.ScrollingDirection.Y, Parent = sidebar,
-	}, { new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }), padding(4, 2, 4, 4) })
-
 	win.Content = new("Frame", {
-		BackgroundTransparency = 1, Position = UDim2.new(0, 176, 0, 8), Size = UDim2.new(1, -184, 1, -16), Parent = body,
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 1, -78), Parent = body,
 	})
+
+	local dock = new("Frame", {
+		Name = "Dock", BackgroundColor3 = Theme.Topbar, AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.fromOffset(120, 50), ZIndex = 10, Parent = body,
+	}, { corner(25), stroke(Theme.Stroke, 1, 0) })
+	win.Dock = dock
+	win.DockScroll = new("ScrollingFrame", {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), CanvasSize = UDim2.new(),
+		ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X, Parent = dock,
+	})
+	win.Indicator = new("Frame", {
+		BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.82, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(80, 40), Position = UDim2.fromOffset(6, 5), Visible = false, Parent = win.DockScroll,
+	}, { corner(20), stroke(Theme.Accent, 1, 0.55) })
+
+	-- Settings-Panel: zweiter Bildschirm hinter dem Hauptfenster
+	local SW = 320
+	local sf = new("Frame", {
+		Name = "SettingsPanel", BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.fromOffset(SW, 300),
+		Visible = false, ZIndex = 1, Parent = gui,
+	}, { corner(14), stroke(Theme.Stroke, 1, 0) })
+	win.SettingsFrame = sf
+	new("TextLabel", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 12), Size = UDim2.new(1, -36, 0, 20),
+		Text = "Window Settings", Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Theme.Text,
+		TextXAlignment = Enum.TextXAlignment.Left, Parent = sf,
+	})
+	new("TextLabel", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 32), Size = UDim2.new(1, -36, 0, 14),
+		Text = "Integrierte Einstellungen", Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.SubText,
+		TextXAlignment = Enum.TextXAlignment.Left, Parent = sf,
+	})
+	local sPage = new("ScrollingFrame", {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(10, 56), Size = UDim2.new(1, -20, 1, -66),
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Theme.Accent, ScrollingDirection = Enum.ScrollingDirection.Y, Parent = sf,
+	}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 8) })
+	win.Settings = setmetatable({ Window = win, Page = sPage, IsSub = true }, SubPage)
 
 	-- Notifications: CGui (unten rechts) + im Window
 	local function holder(layout)
@@ -1864,8 +2830,8 @@ function CGui:CreateWindow(opts)
 	win.NotifStack = holder(true)
 	win.NotifOverlap = holder(false)
 	win.WinNotifs = new("Frame", {
-		BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -12, 1, -12),
-		Size = UDim2.new(0, 260, 1, -24), ZIndex = 50, Parent = body,
+		BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -12, 1, -76),
+		Size = UDim2.new(0, 260, 1, -90), ZIndex = 50, Parent = body,
 	}, { new("UIListLayout", {
 		VerticalAlignment = Enum.VerticalAlignment.Bottom, HorizontalAlignment = Enum.HorizontalAlignment.Right,
 		Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
@@ -1876,7 +2842,10 @@ function CGui:CreateWindow(opts)
 		Visible = false, BackgroundColor3 = Theme.Topbar, AutomaticSize = Enum.AutomaticSize.XY, Text = "",
 		Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Theme.Text, ZIndex = 120, Parent = gui,
 	}, { corner(6), stroke(Theme.Accent, 1, 0.5), padding(8, 5, 8, 5) })
-	win:_Connect(RunService.RenderStepped, function()
+
+	-- Ein Render-Loop fuer: Tooltip, Rahmen-Animation, Settings-Panel folgt dem Fenster
+	local rot = 0
+	win:_Connect(RunService.RenderStepped, function(dt)
 		if win.Tip.Visible then
 			local m = UIS:GetMouseLocation()
 			local a = win._tipAnchor
@@ -1886,9 +2855,36 @@ function CGui:CreateWindow(opts)
 				win.Tip.Position = UDim2.fromOffset(m.X + 14, m.Y + 16)
 			end
 		end
+		if not main.Visible then return end
+		if win.Effects then
+			rot = (rot + dt * 45) % 360
+			for _, g in ipairs(win._borders) do g.Rotation = rot end
+		end
+		local cur, tgt = win._sCur, win._sTarget
+		if cur ~= tgt then
+			cur = cur + (tgt - cur) * math.min(1, dt * 12)
+			if math.abs(tgt - cur) < 0.002 then cur = tgt end
+			win._sCur = cur
+		end
+		local show = cur > 0.004
+		if sf.Visible ~= show then sf.Visible = show end
+		if show then
+			local ap, as = main.AbsolutePosition, main.AbsoluteSize
+			local c2 = workspace.CurrentCamera
+			local vpx = c2 and c2.ViewportSize.X or 1280
+			local right = (ap.X + as.X + SW + 14 <= vpx) or (ap.X - SW - 14 < 0)
+			local x
+			if right then
+				x = (ap.X + as.X - SW - 14) + (SW + 14 + 8) * cur
+			else
+				x = (ap.X + 14) - (SW + 14 + 8) * cur
+			end
+			sf.Size = UDim2.fromOffset(SW, math.max(160, math.floor(as.Y - 28)))
+			sf.Position = UDim2.fromOffset(math.floor(x + 0.5), math.floor(ap.Y + 14 + 0.5))
+		end
 	end)
 
-	-- Dragging
+	-- Dragging (Topbar)
 	local dragging, dragStart, startPos
 	top.InputBegan:Connect(function(input)
 		if isPress(input) then
@@ -1897,9 +2893,9 @@ function CGui:CreateWindow(opts)
 	end)
 	win:_Connect(UIS.InputChanged, function(input)
 		if dragging and isMove(input) then
-			local d = input.Position - dragStart
-			d = Vector3.new(math.floor(d.X + 0.5), math.floor(d.Y + 0.5), 0)
-			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			local dl = input.Position - dragStart
+			dl = Vector3.new(math.floor(dl.X + 0.5), math.floor(dl.Y + 0.5), 0)
+			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + dl.X, startPos.Y.Scale, startPos.Y.Offset + dl.Y)
 		end
 	end)
 	win:_Connect(UIS.InputEnded, function(input)
@@ -1908,13 +2904,14 @@ function CGui:CreateWindow(opts)
 
 	-- Resizing (Ecke unten rechts)
 	local grip = new("TextButton", {
-		BackgroundTransparency = 1, Text = "", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -2, 1, -2),
+		BackgroundTransparency = 1, Text = "", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -4, 1, -4),
 		Size = UDim2.fromOffset(18, 18), ZIndex = 40, Parent = main,
 	})
 	for i = 1, 2 do
 		new("Frame", {
 			BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.3, BorderSizePixel = 0, Rotation = -45,
-			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(6 + i * 4, 6 + i * 4), Size = UDim2.fromOffset(i * 6 + 2, 2), Parent = grip,
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(6 + i * 4, 6 + i * 4),
+			Size = UDim2.fromOffset(i * 6 + 2, 2), Parent = grip,
 		})
 	end
 	local resizing, rStart, rSize, rPos
@@ -1927,24 +2924,28 @@ function CGui:CreateWindow(opts)
 	end)
 	win:_Connect(UIS.InputChanged, function(input)
 		if resizing and isMove(input) then
-			local d = input.Position - rStart
-			local nw, nh = math.max(minSize.X, rSize.X + d.X), math.max(minSize.Y, rSize.Y + d.Y)
+			local dl = input.Position - rStart
+			local nw, nh = math.max(minSize.X, rSize.X + dl.X), math.max(minSize.Y, rSize.Y + dl.Y)
 			nw, nh = math.floor(nw / 2) * 2, math.floor(nh / 2) * 2   -- gerade Pixel
 			main.Size = UDim2.fromOffset(nw, nh)
 			main.Position = UDim2.new(rPos.X.Scale, rPos.X.Offset + (nw - rSize.X) / 2, rPos.Y.Scale, rPos.Y.Offset + (nh - rSize.Y) / 2)
+			win:_LayoutDock()
 		end
 	end)
 	win:_Connect(UIS.InputEnded, function(input)
 		if isPress(input) then resizing = false end
 	end)
 
-	-- GUI per Keybind öffnen/schließen
+	-- Tasten: GUI oeffnen/schliessen, Gamepad-Kuerzel
 	win:_Connect(UIS.InputBegan, function(input, gp)
 		if win.Listening or not win.Ready then return end
-		if win.Visible then   -- Gamepad: L1/R1 = Tab wechseln, B = Sub-Settings zu, Y = Sub-Settings auf
+		if win.Visible then
 			local kc = input.KeyCode
-			if kc == Enum.KeyCode.ButtonR1 then win:_StepTab(1)
+			if win._activePrompt then
+				if kc == Enum.KeyCode.ButtonB and win._activePrompt._cancel then win._activePrompt._cancel() end
+			elseif kc == Enum.KeyCode.ButtonR1 then win:_StepTab(1)
 			elseif kc == Enum.KeyCode.ButtonL1 then win:_StepTab(-1)
+			elseif kc == Enum.KeyCode.ButtonX then win:ToggleSettings()
 			elseif kc == Enum.KeyCode.ButtonB then win:_CloseSub()
 			elseif kc == Enum.KeyCode.ButtonY then
 				local fn = win._subHits and win._subHits[GuiService.SelectedObject]
@@ -1955,7 +2956,7 @@ function CGui:CreateWindow(opts)
 		if win.ToggleKey and input.KeyCode == win.ToggleKey then win:Toggle() end
 	end)
 
-	-- Ablauf: Laden -> (Key-System) -> Window öffnen
+	-- Ablauf: Laden -> (Key-System) -> Window oeffnen -> Autoload
 	task.spawn(function()
 		win:_RunLoading(opts)
 		if win.Destroyed then return end
@@ -1964,9 +2965,11 @@ function CGui:CreateWindow(opts)
 		if win.Destroyed then return end
 		win.Ready = true
 		win:Toggle(true)
+		win:_TryAutoload()
 		safe(opts.OnLoaded, win)
 	end)
 
+	if opts.Settings ~= false then win:_BuildSettings() end
 	return win
 end
 
