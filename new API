@@ -35,7 +35,7 @@ local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 local ContextActionService = game:GetService("ContextActionService")
 
-local CGui = { Version = "2.0.0", _windows = {} }
+local CGui = { Version = "2.1.0", _windows = {} }
 
 -- Theme-System: CGui.Theme / CGui:SetTheme(...) wirken live auf bestehende Fenster
 local Presets = {
@@ -445,9 +445,9 @@ local function spinBorder(frame, thickness)
 	local g = new("UIGradient", { Parent = st })
 	local function paint()
 		g.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Theme.Stroke), ColorSequenceKeypoint.new(0.35, Theme.Stroke),
+			ColorSequenceKeypoint.new(0, Theme.Stroke), ColorSequenceKeypoint.new(0.42, Theme.Stroke),
 			ColorSequenceKeypoint.new(0.5, Theme.Accent),
-			ColorSequenceKeypoint.new(0.65, Theme.Stroke), ColorSequenceKeypoint.new(1, Theme.Stroke),
+			ColorSequenceKeypoint.new(0.58, Theme.Stroke), ColorSequenceKeypoint.new(1, Theme.Stroke),
 		})
 	end
 	paint()
@@ -666,7 +666,7 @@ function Window:Toggle(state)
 	self:_HideTip()
 	if state then
 		if self._snap then fadeSet(self._snap, 0); self._snap = nil end
-		local snap = mergeSnap(fadeCapture(main), fadeCapture(sf))
+		local snap = mergeSnap(mergeSnap(fadeCapture(main), fadeCapture(sf)), fadeCapture(self.TabBar))
 		self._rest = snap
 		self._openedAt = os.clock()
 		fadeSet(snap, 1)
@@ -684,9 +684,9 @@ function Window:Toggle(state)
 	else
 		if self._stopEdit then self._stopEdit() end
 		local sel = GuiService.SelectedObject
-		if sel and (sel:IsDescendantOf(main) or sel:IsDescendantOf(sf)) then GuiService.SelectedObject = nil end
+		if sel and (sel:IsDescendantOf(main) or sel:IsDescendantOf(sf) or sel:IsDescendantOf(self.TabBar)) then GuiService.SelectedObject = nil end
 		if self._rest and os.clock() - (self._openedAt or 0) < 0.4 then fadeSet(self._rest, 0) end
-		local snap = mergeSnap(fadeCapture(main), fadeCapture(sf))
+		local snap = mergeSnap(mergeSnap(fadeCapture(main), fadeCapture(sf)), fadeCapture(self.TabBar))
 		self._snap = snap
 		tween(scale, 0.3, { Scale = 0.92 * us })
 		fadeTween(snap, 0.3, 1)
@@ -696,6 +696,7 @@ function Window:Toggle(state)
 				self._snap = nil
 				main.Visible = false
 				sf.Visible = false
+				self.TabBar.Visible = false
 			end
 		end)
 	end
@@ -771,8 +772,8 @@ function Window:RequestClose()
 		Scope = self.PromptScope,
 		Options = {
 			{ Text = "Abbrechen" },
-			{ Text = "Komplett schließen", Style = "Danger", Callback = function() self:Close() end },
 			{ Text = "Verstecken", Style = "Primary", Callback = function() self:Hide() end },
+			{ Text = "Komplett schließen", Style = "Danger", Callback = function() self:Close() end },
 		},
 	})
 end
@@ -855,14 +856,10 @@ function Window:_ShowPrompt(p)
 	end
 
 	local n = #options
-	local cols = (n == 1 and 1) or (n == 2 and 2) or (n == 3 and 3) or (n == 4 and 2) or 3
-	local rows = math.ceil(n / cols)
+	local gap, innerW = 8, CARD_W - 40
+	local rows = (n == 1) and 1 or math.ceil(n / 2)
 	local grid = new("Frame", {
-		LayoutOrder = 3, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, rows * 36 + (rows - 1) * 8), Parent = inner,
-	})
-	new("UIGridLayout", {
-		CellPadding = UDim2.fromOffset(8, 8), CellSize = UDim2.new(1 / cols, -(8 * (cols - 1)) / cols, 0, 36),
-		SortOrder = Enum.SortOrder.LayoutOrder, FillDirectionMaxCells = cols, Parent = grid,
+		LayoutOrder = 3, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, rows * 36 + (rows - 1) * gap), Parent = inner,
 	})
 
 	-- Position: immer auf ganzen Pixeln (scharfer Text)
@@ -935,11 +932,15 @@ function Window:_ShowPrompt(p)
 	local first
 	for i, opt in ipairs(options) do
 		local style = opt.Style or "Normal"
+		local full = (n == 1) or (i == n and n % 2 == 1)          -- einzelne letzte Option: volle Breite
+		local bw = full and innerW or math.floor((innerW - gap) / 2)
+		local bx = full and 0 or ((i - 1) % 2) * (bw + gap)
+		local by = (math.ceil(i / 2) - 1) * (36 + gap)
 		local btn = new("TextButton", {
 			BackgroundColor3 = (style == "Primary" and Theme.Accent) or (style == "Danger" and Theme.Error) or Theme.Off,
 			AutoButtonColor = false, Text = tostring(opt.Text or "Option"), Font = Enum.Font.GothamMedium, TextSize = 13,
 			TextColor3 = (style == "Normal") and Theme.Text or Theme.OnAccent, TextTruncate = Enum.TextTruncate.AtEnd,
-			LayoutOrder = i, Parent = grid,
+			Size = UDim2.fromOffset(bw, 36), Position = UDim2.fromOffset(bx, by), Parent = grid,
 		}, { corner(9), padding(8, 0, 8, 0) })
 		local function bin() tween(btn, 0.15, { BackgroundTransparency = 0.2 }) end
 		local function bout() tween(btn, 0.15, { BackgroundTransparency = 0 }) end
@@ -1077,7 +1078,13 @@ function Window:_BuildSettings()
 		Name = "Effekte", Description = "Animierter Rahmen um das Fenster", Default = self.Effects,
 		Flag = "CGui.Effects", Callback = function(v) win.Effects = v end,
 	})
-	S:AddButton({ Name = "Position zurücksetzen", Description = "Zentriert das Fenster", Callback = function() win:CenterWindow() end })
+	S:AddDropdown({
+		Name = "Tab-Namen", Description = "Wann die Namen in der Tab-Leiste sichtbar sind (Hover, Active, Always)",
+		Options = { "Hover", "Active", "Always" }, Default = self.TabLabels, Mode = "Inline", Flag = "CGui.TabLabels",
+		Callback = function(v) if v then win:SetTabLabels(v) end end,
+	})
+
+S:AddButton({ Name = "Position zurücksetzen", Description = "Zentriert das Fenster", Callback = function() win:CenterWindow() end })
 
 	S:AddSection("Benachrichtigungen")
 	S:AddDropdown({
@@ -1159,12 +1166,32 @@ end
 --------------------------------------------------------------------
 -- Sub-Settings
 --------------------------------------------------------------------
+local SUB_OPEN = UDim2.new(1, -8, 0, 8)
+local SUB_CLOSED = UDim2.new(2, 0, 0, 8)
+
+function Window:_UpdateSubSizes()
+	local pw = math.floor(self.Main.Size.X.Offset * 0.86 / 2) * 2
+	for panel in pairs(self._subPanels) do
+		panel.Size = UDim2.new(0, pw, 1, -16)
+	end
+end
+
+function Window:SetTabLabels(mode)
+	self.TabLabels = mode or "Hover"
+	self:_LayoutDock(true)
+end
+
 function Window:_OpenSub(panel, from, first)
 	if self._openSub and self._openSub ~= panel then self:_CloseSub(true) end
 	self._openSub = panel
 	self._subFrom = from
+	local scrim = self._subScrims[panel]
 	panel.Visible = true
-	tween(panel, 0.4, { Position = UDim2.new(0.1, 0, 0, 0) })
+	if scrim then
+		scrim.Visible = true
+		tween(scrim, 0.3, { BackgroundTransparency = 0.45 })
+	end
+	tween(panel, 0.45, { Position = SUB_OPEN })
 	if first and isGamepadActive() then
 		task.delay(0.15, function()
 			if self._openSub == panel then GuiService.SelectedObject = first end
@@ -1176,8 +1203,13 @@ function Window:_CloseSub(noRestore)
 	local panel = self._openSub
 	if not panel then return end
 	self._openSub = nil
-	tween(panel, 0.35, { Position = UDim2.new(1, 0, 0, 0) }).Completed:Connect(function()
-		if self._openSub ~= panel then panel.Visible = false end
+	local scrim = self._subScrims[panel]
+	if scrim then tween(scrim, 0.3, { BackgroundTransparency = 1 }) end
+	tween(panel, 0.35, { Position = SUB_CLOSED }).Completed:Connect(function()
+		if self._openSub ~= panel then
+			panel.Visible = false
+			if scrim then scrim.Visible = false end
+		end
 	end)
 	if not noRestore and self._subFrom and isGamepadActive() then
 		GuiService.SelectedObject = self._subFrom
@@ -1189,36 +1221,71 @@ local function attachSub(container, el, b)
 	local win = container.Window
 	function el:SubSettings(title)
 		if self._sub then return self._sub end
-		local panel = new("Frame", {
-			BackgroundColor3 = Theme.Main, BorderSizePixel = 0, ZIndex = 30, Visible = false,
-			Size = UDim2.new(0.9, -6, 1, -6), Position = UDim2.new(1, 0, 0, 0), Parent = win.Body,
-		}, { corner(10), stroke(Theme.Accent, 1, 0.5) })
-		local head = new("Frame", {
-			BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 38), Parent = panel,
-		}, { corner(10) })
-		local back = new("TextButton", {
-			BackgroundColor3 = Theme.Element, AutoButtonColor = false, Text = "‹  Back", Font = Enum.Font.GothamMedium,
-			TextSize = 13, TextColor3 = Theme.Text, Size = UDim2.fromOffset(70, 26), Position = UDim2.fromOffset(8, 6),
-			Parent = head,
-		}, { corner(6) })
-		back.MouseEnter:Connect(function() tween(back, 0.15, { BackgroundColor3 = Theme.Accent }) end)
-		back.MouseLeave:Connect(function() tween(back, 0.15, { BackgroundColor3 = Theme.Element }) end)
-		back.Activated:Connect(function() win:_CloseSub() end)
-		selectFX(win, back,
-			function() tween(back, 0.15, { BackgroundColor3 = Theme.Accent }) end,
-			function() tween(back, 0.15, { BackgroundColor3 = Theme.Element }) end)
-		new("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(88, 0), Size = UDim2.new(1, -96, 1, 0),
-			Text = title or self.Name or "Settings", Font = Enum.Font.GothamBold, TextSize = 15,
-			TextColor3 = Theme.Text, TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd, Parent = head,
+		local scrim = new("Frame", {
+			BackgroundColor3 = Theme.Overlay, BackgroundTransparency = 1, BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1), ZIndex = 25, Visible = false, Active = true, Parent = win.Body,
 		})
+		scrim.InputBegan:Connect(function(input)
+			if isPress(input) then win:_CloseSub() end
+		end)
+		local panel = new("Frame", {
+			BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, ZIndex = 30, Visible = false,
+			AnchorPoint = Vector2.new(1, 0), Size = UDim2.new(0, 400, 1, -16), Position = SUB_CLOSED, Parent = win.Body,
+		}, { corner(14), stroke(Theme.Accent, 1, 0.5) })
+		win._subScrims[panel] = scrim
+		win._subPanels[panel] = true
+		win:_UpdateSubSizes()
+
+		-- Kopf: runder Zurueck-Button, Titel, Hinweis
+		local back = new("TextButton", {
+			BackgroundColor3 = Theme.Element, AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(30, 30),
+			Position = UDim2.fromOffset(14, 13), Parent = panel,
+		}, { corner(15) })
+		local arrow = new("Frame", {
+			BackgroundTransparency = 1, Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5), Parent = back,
+		})
+		local arrowLines = {}
+		for i, def in ipairs({ { -3, -45 }, { 3, 45 } }) do
+			arrowLines[i] = new("Frame", {
+				BackgroundColor3 = Theme.Text, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 1, 0.5, def[1]), Size = UDim2.fromOffset(8, 2), Rotation = def[2], Parent = arrow,
+			}, { corner(1) })
+		end
+		local function bIn()
+			tween(back, 0.15, { BackgroundColor3 = Theme.Accent })
+			for _, l in ipairs(arrowLines) do tween(l, 0.15, { BackgroundColor3 = Theme.OnAccent }) end
+		end
+		local function bOut()
+			tween(back, 0.15, { BackgroundColor3 = Theme.Element })
+			for _, l in ipairs(arrowLines) do tween(l, 0.15, { BackgroundColor3 = Theme.Text }) end
+		end
+		back.MouseEnter:Connect(bIn)
+		back.MouseLeave:Connect(bOut)
+		selectFX(win, back, bIn, bOut)
+		back.Activated:Connect(function() win:_CloseSub() end)
+
+		new("TextLabel", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(56, 10), Size = UDim2.new(1, -72, 0, 20),
+			Text = title or self.Name or "Settings", Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Theme.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = panel,
+		})
+		new("TextLabel", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(56, 30), Size = UDim2.new(1, -72, 0, 14),
+			Text = "Sub-Settings", Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.SubText,
+			TextXAlignment = Enum.TextXAlignment.Left, Parent = panel,
+		})
+		new("Frame", {
+			BackgroundColor3 = Theme.Stroke, BackgroundTransparency = 0.3, BorderSizePixel = 0,
+			Position = UDim2.fromOffset(14, 56), Size = UDim2.new(1, -28, 0, 1), Parent = panel,
+		})
+
 		local page = new("ScrollingFrame", {
-			BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(8, 46),
-			Size = UDim2.new(1, -16, 1, -54), CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(10, 66),
+			Size = UDim2.new(1, -20, 1, -76), CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Accent, ScrollingDirection = Enum.ScrollingDirection.Y,
 			Parent = panel,
-		}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 6) })
+		}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 8) })
 		local sub = setmetatable({ Window = win, Page = page, Panel = panel, IsSub = true }, SubPage)
 		self._sub = sub
 		win._subHits = win._subHits or {}
@@ -1246,6 +1313,7 @@ local function buildBase(container, opts, extraH, rightW)
 		Size = UDim2.new(1, -6, 0, headH + (extraH or 0)), Parent = container.Page,
 	}, { corner(8), stroke() })
 	local fstroke = frame:FindFirstChildOfClass("UIStroke")
+	fstroke.Transparency = 0.5
 	local header = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, headH), Parent = frame })
 	local hit = new("TextButton", {
 		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), Parent = header,
@@ -2042,19 +2110,21 @@ function Container:AddSection(opts)
 	if type(opts) == "string" then opts = { Title = opts } end
 	opts = opts or {}
 	local title = opts.Title or opts.Name or ""
-	local frame = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -6, 0, 22), Parent = self.Page })
+	local frame = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -6, 0, 24), Parent = self.Page })
 	local el = { Kind = "Section", Frame = frame }
 	local startX = 0
 	if title ~= "" then
-		local size = TextService:GetTextSize(title, 12, Enum.Font.GothamBold, Vector2.new(1000, 20))
+		local up = string.upper(title)
+		local size = TextService:GetTextSize(up, 11, Enum.Font.GothamBold, Vector2.new(1000, 20))
 		new("TextLabel", {
-			BackgroundTransparency = 1, Size = UDim2.fromOffset(size.X + 4, 22), Text = title, Font = Enum.Font.GothamBold,
-			TextSize = 12, TextColor3 = Theme.Accent, TextXAlignment = Enum.TextXAlignment.Left, Parent = frame,
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(2, 2), Size = UDim2.fromOffset(size.X + 4, 22),
+			Text = up, Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.Accent,
+			TextXAlignment = Enum.TextXAlignment.Left, Parent = frame,
 		})
-		startX = size.X + 12
+		startX = size.X + 14
 	end
 	new("Frame", {
-		BackgroundColor3 = Theme.Stroke, BorderSizePixel = 0, Position = UDim2.new(0, startX, 0.5, 0),
+		BackgroundColor3 = Theme.Stroke, BorderSizePixel = 0, Position = UDim2.new(0, startX, 0.5, 1),
 		Size = UDim2.new(1, -startX, 0, 1), Parent = frame,
 	})
 	function el:Destroy() frame:Destroy() end
@@ -2149,44 +2219,65 @@ function Window:_SelectTab(tab)
 	tween(tab.Page, 0.4, { Position = UDim2.fromOffset(0, 0) })
 	tween(tab.Label, 0.25, { TextColor3 = Theme.Text })
 	tween(tab.IconObj, 0.25, { [tab.IconProp] = Theme.Accent })
-	self:_MoveIndicator(true)
+	self:_LayoutDock(true)
 	self:_CloseSub()
 end
 
-function Window:_LayoutDock()
-	local x = 6
+function Window:_LayoutDock(animate)
+	local mode = self.TabLabels or "Hover"
+	local x, collapsed = 5, 5
 	for _, t in ipairs(self.Tabs) do
 		if t.Button.Visible then
-			t.X = x
-			t.Button.Position = UDim2.fromOffset(x, 5)
-			x = x + t.W + 4
+			local expanded = t.Hover or mode == "Always" or (mode == "Active" and t == self.CurrentTab)
+			local w = expanded and (34 + t.TextW + 18) or 34
+			t.X, t.CurW = x, w
+			local pos, size = UDim2.fromOffset(x, 5), UDim2.fromOffset(w, 30)
+			local lbl = {
+				TextTransparency = expanded and 0 or 1,
+				Position = expanded and UDim2.fromOffset(32, 0) or UDim2.fromOffset(22, 4),
+			}
+			if animate then
+				tween(t.Button, 0.3, { Position = pos, Size = size })
+				tween(t.Label, 0.3, lbl)
+			else
+				t.Button.Position, t.Button.Size = pos, size
+				for k, v in pairs(lbl) do t.Label[k] = v end
+			end
+			x = x + w + 4
+			collapsed = collapsed + 34 + 4
 		end
 	end
-	local total = x + 2
-	self.DockScroll.CanvasSize = UDim2.fromOffset(total, 0)
-	local maxW = math.max(120, self.Main.Size.X.Offset - 48)
-	local w = math.min(total, maxW)
+	local cap = self._barCap or 600
+	local total = x + 1
+	self.TabScroll.CanvasSize = UDim2.fromOffset(total, 0)
+	local w = math.min(total, cap)
 	w = w - w % 2
-	self.Dock.Size = UDim2.fromOffset(w, 50)
-	self:_MoveIndicator(false)
+	local baseW = math.min(collapsed + 1, cap)
+	self._barBaseW = baseW - baseW % 2                    -- linke Kante bleibt beim Hovern fix
+	if animate then
+		tween(self.TabBar, 0.3, { Size = UDim2.fromOffset(w, 40) })
+	else
+		self.TabBar.Size = UDim2.fromOffset(w, 40)
+	end
+	self:_MoveIndicator(animate)
 end
 
 function Window:_MoveIndicator(animate)
 	local t = self.CurrentTab
 	local ind = self.Indicator
 	if not t or not t.X then ind.Visible = false; return end
-	local pos, size = UDim2.fromOffset(t.X, 5), UDim2.fromOffset(t.W, 40)
+	local pos, size = UDim2.fromOffset(t.X, 5), UDim2.fromOffset(t.CurW or 34, 30)
 	if animate and ind.Visible then
-		tween(ind, 0.4, { Position = pos, Size = size })
+		tween(ind, 0.3, { Position = pos, Size = size })
 	else
 		ind.Position, ind.Size = pos, size
 	end
 	ind.Visible = true
-	local sc = self.DockScroll
-	local viewW = self.Dock.Size.X.Offset
+	local sc = self.TabScroll
+	local viewW = math.min(sc.CanvasSize.X.Offset, self._barCap or 600)
 	local canvasW = sc.CanvasSize.X.Offset
 	if canvasW > viewW then
-		local target = math.clamp(t.X + t.W / 2 - viewW / 2, 0, canvasW - viewW)
+		local target = math.clamp(t.X + (t.CurW or 34) / 2 - viewW / 2, 0, canvasW - viewW)
 		tween(sc, 0.35, { CanvasPosition = Vector2.new(math.floor(target), 0) })
 	end
 end
@@ -2194,20 +2285,17 @@ end
 function Window:AddTab(opts)
 	if type(opts) == "string" then opts = { Name = opts } end
 	opts = opts or {}
-	local tab = setmetatable({ Window = self, Name = opts.Name or "Tab", Locked = false, Index = #self.Tabs + 1 }, Tab)
-	local textW = TextService:GetTextSize(tab.Name, 13, Enum.Font.GothamMedium, Vector2.new(400, 20)).X
-	tab.W = math.floor(textW) + 60
+	local tab = setmetatable({ Window = self, Name = opts.Name or "Tab", Locked = false, Index = #self.Tabs + 1, Hover = false }, Tab)
+	tab.TextW = math.floor(TextService:GetTextSize(tab.Name, 13, Enum.Font.GothamMedium, Vector2.new(400, 20)).X)
 
 	local btn = new("TextButton", {
-		BackgroundTransparency = 1, AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(tab.W, 40),
-		Position = UDim2.fromOffset(6, 5), Parent = self.DockScroll,
+		BackgroundTransparency = 1, AutoButtonColor = false, Text = "", ClipsDescendants = true,
+		Size = UDim2.fromOffset(34, 30), Position = UDim2.fromOffset(5, 5), Parent = self.TabScroll,
 	})
-	local slot = new("Frame", {
-		BackgroundTransparency = 1, Size = UDim2.fromOffset(24, 24), Position = UDim2.fromOffset(12, 8), Parent = btn,
-	})
+	local slot = new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(34, 30), Parent = btn })
 	local img = new("ImageLabel", {
 		BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(20, 20), ImageColor3 = Theme.SubText, Parent = slot,
+		Size = UDim2.fromOffset(18, 18), ImageColor3 = Theme.SubText, Parent = slot,
 	})
 	if opts.Icon and applyIcon(img, opts.Icon) then
 		tab.IconObj, tab.IconProp = img, "ImageColor3"
@@ -2215,14 +2303,15 @@ function Window:AddTab(opts)
 		img:Destroy()
 		tab.IconObj = new("TextLabel", {   -- ohne Icon: die ersten 2 Buchstaben
 			BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = string.sub(tab.Name, 1, 2),
-			Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.SubText, Parent = slot,
+			Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.SubText, Parent = slot,
 		})
 		tab.IconProp = "TextColor3"
 	end
+	-- Name: liegt hinter dem Icon und schiebt sich beim Hovern heraus
 	tab.Label = new("TextLabel", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(44, 0), Size = UDim2.new(1, -50, 1, 0), Text = tab.Name,
-		Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = Theme.SubText, TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd, Parent = btn,
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(22, 4), Size = UDim2.fromOffset(tab.TextW + 10, 30),
+		Text = tab.Name, Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = Theme.SubText,
+		TextTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = btn,
 	})
 	tab.Button = btn
 
@@ -2233,12 +2322,22 @@ function Window:AddTab(opts)
 	}, { new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }), padding(0, 2, 4, 8) })
 
 	local function hoverIn()
-		if opts.Description and opts.Description ~= "" then self:_ShowTip(opts.Description, btn) end
-		if self.CurrentTab ~= tab and not tab.Locked then tween(tab.Label, 0.15, { TextColor3 = Theme.Text }) end
+		tab.Hover = true
+		self:_LayoutDock(true)
+		if opts.Description and opts.Description ~= "" then self:_ShowTip(opts.Description, self.TabBar) end
+		if self.CurrentTab ~= tab and not tab.Locked then
+			tween(tab.Label, 0.2, { TextColor3 = Theme.Text })
+			tween(tab.IconObj, 0.2, { [tab.IconProp] = Theme.Text })
+		end
 	end
 	local function hoverOut()
+		tab.Hover = false
+		self:_LayoutDock(true)
 		self:_HideTip()
-		if self.CurrentTab ~= tab and not tab.Locked then tween(tab.Label, 0.15, { TextColor3 = Theme.SubText }) end
+		if self.CurrentTab ~= tab and not tab.Locked then
+			tween(tab.Label, 0.2, { TextColor3 = Theme.SubText })
+			tween(tab.IconObj, 0.2, { [tab.IconProp] = Theme.SubText })
+		end
 	end
 	btn.MouseEnter:Connect(hoverIn)
 	btn.MouseLeave:Connect(hoverOut)
@@ -2255,6 +2354,7 @@ function Window:AddTab(opts)
 			else
 				btn.Visible = true
 				tween(self.Label, 0.2, { TextColor3 = Theme.Off })
+				tween(self.IconObj, 0.2, { [self.IconProp] = Theme.Off })
 			end
 			if self.Window.CurrentTab == self then
 				for _, t in ipairs(self.Window.Tabs) do
@@ -2263,16 +2363,18 @@ function Window:AddTab(opts)
 			end
 		else
 			btn.Visible = true
-			tween(self.Label, 0.2, { TextColor3 = (self.Window.CurrentTab == self) and Theme.Text or Theme.SubText })
+			local active = self.Window.CurrentTab == self
+			tween(self.Label, 0.2, { TextColor3 = active and Theme.Text or Theme.SubText })
+			tween(self.IconObj, 0.2, { [self.IconProp] = active and Theme.Accent or Theme.SubText })
 		end
-		self.Window:_LayoutDock()
+		self.Window:_LayoutDock(true)
 	end
 	function tab:Lock(mode) self:SetLock(true, mode) end
 	function tab:Unlock() self:SetLock(false) end
 	function tab:Select() self.Window:_SelectTab(self) end
 
 	table.insert(self.Tabs, tab)
-	self:_LayoutDock()
+	self:_LayoutDock(false)
 	if not self.CurrentTab then self:_SelectTab(tab) end
 	if opts.Locked then tab:SetLock(true, opts.LockMode) end
 	return tab
@@ -2658,7 +2760,7 @@ function CGui:CreateWindow(opts)
 		CloseAction = opts.CloseAction or "Ask",           -- "Ask" | "Hide" | "Destroy"
 		PromptScope = opts.PromptScope or "Window",        -- "Window" | "Screen"
 		Effects = opts.Effects ~= false,
-		UserScale = 1,
+		UserScale = 1, TabLabels = opts.TabLabels or "Hover", _subScrims = {}, _subPanels = {},
 		_sCur = 0, _sTarget = 0, _settingsOpen = false,
 	}, Window)
 
@@ -2682,7 +2784,7 @@ function CGui:CreateWindow(opts)
 	win.NoSel = new("Frame", { Name = "NoSel", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
 
 	-- Hauptfenster
-	local size = opts.Size or Vector2.new(680, 460)
+	local size = opts.Size or Vector2.new(660, 420)
 	size = Vector2.new(size.X - size.X % 2, size.Y - size.Y % 2)   -- gerade Pixel = scharfer Text
 	local minSize = Vector2.new(520, 340)
 	local cam = workspace.CurrentCamera
@@ -2695,29 +2797,33 @@ function CGui:CreateWindow(opts)
 	}, { corner(14) })
 	win.Main = main
 	win.Scale = new("UIScale", { Scale = 0.9, Parent = main })
-	local borderGrad, paintBorder = spinBorder(main, 1.5)
+	local borderGrad, paintBorder = spinBorder(main, 1)
 	table.insert(win._borders, borderGrad)
 	table.insert(win._themeHooks, paintBorder)
 
 	-- Topbar: Titel (+Version), Settings, X
 	local top = new("Frame", {
-		BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 48), Parent = main,
+		BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 44), Parent = main,
 	}, { corner(14) })
 	new("Frame", {
 		BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Position = UDim2.new(0, 0, 1, -14),
 		Size = UDim2.new(1, 0, 0, 14), Parent = top,
 	})
 	win.Topbar = top
+	new("Frame", {
+		BackgroundColor3 = Theme.Stroke, BackgroundTransparency = 0.4, BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), Parent = top,
+	})
 	local hasVersion = win.Version ~= ""
 	new("TextLabel", {
-		BackgroundTransparency = 1, Position = hasVersion and UDim2.fromOffset(18, 7) or UDim2.fromOffset(18, 0),
+		BackgroundTransparency = 1, Position = hasVersion and UDim2.fromOffset(18, 5) or UDim2.fromOffset(18, 0),
 		Size = hasVersion and UDim2.new(1, -208, 0, 20) or UDim2.new(1, -208, 1, 0), Text = win.Name,
 		Font = Enum.Font.GothamBold, TextSize = hasVersion and 15 or 18, TextColor3 = Theme.Text,
 		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = top,
 	})
 	if hasVersion then
 		new("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 27), Size = UDim2.new(1, -208, 0, 14),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 25), Size = UDim2.new(1, -208, 0, 14),
 			Text = win.Version, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.Text,
 			TextTransparency = 0.55, TextXAlignment = Enum.TextXAlignment.Left, Parent = top,
 		})
@@ -2767,27 +2873,29 @@ function CGui:CreateWindow(opts)
 
 	-- Body: Inhalt oben, Dock (Tabs) unten
 	local body = new("Frame", {
-		BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 48),
-		Size = UDim2.new(1, 0, 1, -48), Parent = main,
+		BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 44),
+		Size = UDim2.new(1, 0, 1, -44), Parent = main,
 	})
 	win.Body = body
 	win.Content = new("Frame", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 1, -78), Parent = body,
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 1, -20), Parent = body,
 	})
 
-	local dock = new("Frame", {
-		Name = "Dock", BackgroundColor3 = Theme.Topbar, AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.fromOffset(120, 50), ZIndex = 10, Parent = body,
-	}, { corner(25), stroke(Theme.Stroke, 1, 0) })
-	win.Dock = dock
-	win.DockScroll = new("ScrollingFrame", {
+	-- Tab-Bar: schlanke Leiste UNTER dem Fenster (Icons; der Name schiebt sich beim Hovern heraus)
+	local tabBar = new("Frame", {
+		Name = "TabBar", BackgroundColor3 = Theme.Topbar, BorderSizePixel = 0, Size = UDim2.fromOffset(60, 40),
+		Position = UDim2.fromOffset(0, 0), Visible = false, ZIndex = 3, Parent = gui,
+	}, { corner(20), stroke(Theme.Stroke, 1, 0.3) })
+	win.TabBar = tabBar
+	win.TabScroll = new("ScrollingFrame", {
 		BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), CanvasSize = UDim2.new(),
-		ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X, Parent = dock,
+		ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X, Parent = tabBar,
 	})
+	win.DockScroll = win.TabScroll
 	win.Indicator = new("Frame", {
 		BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.82, BorderSizePixel = 0,
-		Size = UDim2.fromOffset(80, 40), Position = UDim2.fromOffset(6, 5), Visible = false, Parent = win.DockScroll,
-	}, { corner(20), stroke(Theme.Accent, 1, 0.55) })
+		Size = UDim2.fromOffset(34, 30), Position = UDim2.fromOffset(5, 5), Visible = false, Parent = win.TabScroll,
+	}, { corner(15), stroke(Theme.Accent, 1, 0.55) })
 
 	-- Settings-Panel: zweiter Bildschirm hinter dem Hauptfenster
 	local SW = 320
@@ -2830,8 +2938,8 @@ function CGui:CreateWindow(opts)
 	win.NotifStack = holder(true)
 	win.NotifOverlap = holder(false)
 	win.WinNotifs = new("Frame", {
-		BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -12, 1, -76),
-		Size = UDim2.new(0, 260, 1, -90), ZIndex = 50, Parent = body,
+		BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -12, 1, -12),
+		Size = UDim2.new(0, 260, 1, -24), ZIndex = 50, Parent = body,
 	}, { new("UIListLayout", {
 		VerticalAlignment = Enum.VerticalAlignment.Bottom, HorizontalAlignment = Enum.HorizontalAlignment.Right,
 		Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
@@ -2855,9 +2963,10 @@ function CGui:CreateWindow(opts)
 				win.Tip.Position = UDim2.fromOffset(m.X + 14, m.Y + 16)
 			end
 		end
+		if tabBar.Visible ~= main.Visible then tabBar.Visible = main.Visible end
 		if not main.Visible then return end
 		if win.Effects then
-			rot = (rot + dt * 45) % 360
+			rot = (rot + dt * 30) % 360
 			for _, g in ipairs(win._borders) do g.Rotation = rot end
 		end
 		local cur, tgt = win._sCur, win._sTarget
@@ -2866,22 +2975,34 @@ function CGui:CreateWindow(opts)
 			if math.abs(tgt - cur) < 0.002 then cur = tgt end
 			win._sCur = cur
 		end
+		local ap, as = main.AbsolutePosition, main.AbsoluteSize
+		local c2 = workspace.CurrentCamera
+		local vpx = c2 and c2.ViewportSize.X or 1280
+		local vpy = c2 and c2.ViewportSize.Y or 720
+
+		-- Settings-Panel: unterhalb der Topbar, startet komplett hinter dem Fenster
 		local show = cur > 0.004
 		if sf.Visible ~= show then sf.Visible = show end
 		if show then
-			local ap, as = main.AbsolutePosition, main.AbsoluteSize
-			local c2 = workspace.CurrentCamera
-			local vpx = c2 and c2.ViewportSize.X or 1280
+			local topY = 54
 			local right = (ap.X + as.X + SW + 14 <= vpx) or (ap.X - SW - 14 < 0)
 			local x
 			if right then
-				x = (ap.X + as.X - SW - 14) + (SW + 14 + 8) * cur
+				x = (ap.X + as.X - SW - 24) + (SW + 24 + 8) * cur
 			else
-				x = (ap.X + 14) - (SW + 14 + 8) * cur
+				x = (ap.X + 24) - (SW + 24 + 8) * cur
 			end
-			sf.Size = UDim2.fromOffset(SW, math.max(160, math.floor(as.Y - 28)))
-			sf.Position = UDim2.fromOffset(math.floor(x + 0.5), math.floor(ap.Y + 14 + 0.5))
+			sf.Size = UDim2.fromOffset(SW, math.max(160, math.floor(as.Y - topY - 14)))
+			sf.Position = UDim2.fromOffset(math.floor(x + 0.5), math.floor(ap.Y + topY + 0.5))
 		end
+
+		-- Tab-Bar unter dem Fenster (linke Kante fix, waechst beim Hovern nach rechts)
+		win._barCap = math.floor(as.X)
+		local baseW = win._barBaseW or tabBar.Size.X.Offset
+		baseW = baseW - baseW % 2
+		local bx = math.max(math.floor(ap.X + as.X / 2 - baseW / 2), math.floor(ap.X))
+		local by = math.min(math.floor(ap.Y + as.Y + 10), vpy - 48)
+		tabBar.Position = UDim2.fromOffset(bx, by)
 	end)
 
 	-- Dragging (Topbar)
@@ -2930,6 +3051,7 @@ function CGui:CreateWindow(opts)
 			main.Size = UDim2.fromOffset(nw, nh)
 			main.Position = UDim2.new(rPos.X.Scale, rPos.X.Offset + (nw - rSize.X) / 2, rPos.Y.Scale, rPos.Y.Offset + (nh - rSize.Y) / 2)
 			win:_LayoutDock()
+			win:_UpdateSubSizes()
 		end
 	end)
 	win:_Connect(UIS.InputEnded, function(input)
